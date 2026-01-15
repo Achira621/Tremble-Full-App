@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Camera, ArrowRight } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Camera, ArrowRight, X, Loader } from 'lucide-react';
+import api, { TokenManager } from '../../services/api';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfile) => void;
@@ -7,7 +8,7 @@ interface OnboardingProps {
 
 export interface UserProfile {
   name: string;
-  age: string;
+  age: number;
   bio: string;
   interests: string[];
   photos: string[];
@@ -15,13 +16,18 @@ export interface UserProfile {
 
 export function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(1);
-  const [profile, setProfile] = useState<UserProfile>({
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [profile, setProfile] = useState<Omit<UserProfile, 'photos'>>({
     name: '',
-    age: '',
+    age: 0,
     bio: '',
     interests: [],
-    photos: []
   });
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const suggestedInterests = [
     'Photography', 'Travel', 'Music', 'Fitness', 'Cooking', 'Art',
@@ -37,15 +43,79 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     }));
   };
 
-  const handlePhotoUpload = (photoUrl: string) => {
-    setProfile(prev => ({
-      ...prev,
-      photos: [...prev.photos, photoUrl]
-    }));
+  const handlePhotoSelect = async (index: number, file: File) => {
+    try {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append('photo', file);
+
+      // Upload to backend (which uploads to Cloudinary)
+      const response = await fetch(`${api.auth.getCurrentUser ? '' : ''}https://tremble-full-app-85d9.vercel.app/api/users/upload-photo`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.data?.url) {
+        const newPhotos = [...photos];
+        newPhotos[index] = data.data.url;
+        setPhotos(newPhotos.filter(p => p)); // Remove empty slots
+      } else {
+        alert('Photo upload failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Photo upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const handleComplete = () => {
-    onComplete(profile);
+  const handleComplete = async () => {
+    if (photos.length < 2) {
+      alert('Please upload at least 2 photos');
+      return;
+    }
+
+    try {
+      setRegistering(true);
+
+      // Register user with backend
+      const response = await api.auth.register({
+        email,
+        username: profile.name.toLowerCase().replace(/\s+/g, ''),
+        password,
+        name: profile.name,
+        age: profile.age,
+      });
+
+      if (response.success && response.data) {
+        // Token is automatically saved by the API client
+        // Now update profile with photos and interests
+        await api.users.updateProfile({
+          bio: profile.bio,
+          interests: profile.interests,
+          photos: photos.map((url, index) => ({
+            url,
+            order: index,
+          })),
+        });
+
+        // Call onComplete with full profile
+        onComplete({
+          ...profile,
+          photos,
+        });
+      } else {
+        alert(response.error || 'Registration failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      alert('Registration failed. Please try again.');
+    } finally {
+      setRegistering(false);
+    }
   };
 
   return (
@@ -53,18 +123,54 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8">
         {/* Progress Bar */}
         <div className="flex gap-2 mb-8">
-          {[1, 2, 3].map((s) => (
+          {[1, 2, 3, 4].map((s) => (
             <div
               key={s}
-              className={`h-1 flex-1 rounded-full transition-colors ${
-                s <= step ? 'bg-gradient-to-r from-pink-500 to-purple-500' : 'bg-gray-200'
-              }`}
+              className={`h-1 flex-1 rounded-full transition-colors ${s <= step ? 'bg-gradient-to-r from-pink-500 to-purple-500' : 'bg-gray-200'
+                }`}
             />
           ))}
         </div>
 
-        {/* Step 1: Basic Info */}
+        {/* Step 1: Account Info */}
         {step === 1 && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+              Create your account
+            </h2>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 focus:outline-none transition-colors"
+                placeholder="your@email.com"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 focus:outline-none transition-colors"
+                placeholder="Create a password"
+              />
+            </div>
+            <button
+              onClick={() => setStep(2)}
+              disabled={!email || !password || password.length < 6}
+              className="w-full py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              Continue
+              <ArrowRight size={20} />
+            </button>
+          </div>
+        )}
+
+        {/* Step 2: Basic Info */}
+        {step === 2 && (
           <div className="space-y-6">
             <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
               Tell us about you
@@ -83,8 +189,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               <label className="block text-sm font-medium text-gray-700 mb-2">Age</label>
               <input
                 type="number"
-                value={profile.age}
-                onChange={(e) => setProfile({ ...profile, age: e.target.value })}
+                value={profile.age || ''}
+                onChange={(e) => setProfile({ ...profile, age: parseInt(e.target.value) || 0 })}
                 className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 focus:outline-none transition-colors"
                 placeholder="Your age"
               />
@@ -99,39 +205,6 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 rows={4}
               />
             </div>
-            <button
-              onClick={() => setStep(2)}
-              disabled={!profile.name || !profile.age || !profile.bio}
-              className="w-full py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              Continue
-              <ArrowRight size={20} />
-            </button>
-          </div>
-        )}
-
-        {/* Step 2: Interests */}
-        {step === 2 && (
-          <div className="space-y-6">
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              What are you into?
-            </h2>
-            <p className="text-gray-600">Select at least 3 interests</p>
-            <div className="flex flex-wrap gap-2">
-              {suggestedInterests.map((interest) => (
-                <button
-                  key={interest}
-                  onClick={() => handleInterestToggle(interest)}
-                  className={`px-4 py-2 rounded-full border-2 transition-all ${
-                    profile.interests.includes(interest)
-                      ? 'border-purple-500 bg-purple-50 text-purple-700'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  {interest}
-                </button>
-              ))}
-            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setStep(1)}
@@ -141,7 +214,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               </button>
               <button
                 onClick={() => setStep(3)}
-                disabled={profile.interests.length < 3}
+                disabled={!profile.name || !profile.age || profile.age < 18}
                 className="flex-1 py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 Continue
@@ -151,41 +224,25 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         )}
 
-        {/* Step 3: Photos */}
+        {/* Step 3: Interests */}
         {step === 3 && (
           <div className="space-y-6">
             <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              Add your photos
+              Your interests
             </h2>
-            <p className="text-gray-600">Add at least 2 photos to get started</p>
-            <div className="grid grid-cols-3 gap-3">
-              {[...Array(6)].map((_, i) => (
-                <div
-                  key={i}
-                  className={`aspect-square rounded-2xl border-2 border-dashed transition-all ${
-                    profile.photos[i]
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-gray-300 hover:border-gray-400 cursor-pointer'
-                  }`}
-                  onClick={() => {
-                    if (!profile.photos[i]) {
-                      // Simulate photo upload with placeholder
-                      handlePhotoUpload(`https://picsum.photos/400/400?random=${i}`);
-                    }
-                  }}
+            <p className="text-gray-600">Select at least 3 interests</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedInterests.map((interest) => (
+                <button
+                  key={interest}
+                  onClick={() => handleInterestToggle(interest)}
+                  className={`px-4 py-2 rounded-full border-2 transition-all ${profile.interests.includes(interest)
+                      ? 'border-purple-500 bg-purple-50 text-purple-700'
+                      : 'border-gray-200 hover:border-gray-300'
+                    }`}
                 >
-                  {profile.photos[i] ? (
-                    <img
-                      src={profile.photos[i]}
-                      alt={`Photo ${i + 1}`}
-                      className="w-full h-full object-cover rounded-2xl"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Camera className="text-gray-400" size={24} />
-                    </div>
-                  )}
-                </div>
+                  {interest}
+                </button>
               ))}
             </div>
             <div className="flex gap-3">
@@ -196,11 +253,102 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 Back
               </button>
               <button
-                onClick={handleComplete}
-                disabled={profile.photos.length < 2}
-                className="flex-1 py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setStep(4)}
+                disabled={profile.interests.length < 3}
+                className="flex-1 py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Get Started
+                Continue
+                <ArrowRight size={20} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Photos */}
+        {step === 4 && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+              Add your photos
+            </h2>
+            <p className="text-gray-600">Upload at least 2 photos</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[...Array(6)].map((_, i) => (
+                <div
+                  key={i}
+                  className={`aspect-square rounded-2xl border-2 border-dashed transition-all relative ${photos[i]
+                      ? 'border-purple-500 bg-purple-50'
+                      : 'border-gray-300 hover:border-gray-400 cursor-pointer'
+                    }`}
+                  onClick={() => {
+                    if (!photos[i] && !uploading) {
+                      fileInputRefs.current[i]?.click();
+                    }
+                  }}
+                >
+                  {photos[i] ? (
+                    <>
+                      <img
+                        src={photos[i]}
+                        alt={`Photo ${i + 1}`}
+                        className="w-full h-full object-cover rounded-2xl"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newPhotos = [...photos];
+                          newPhotos.splice(i, 1);
+                          setPhotos(newPhotos);
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      {uploading ? (
+                        <Loader className="text-purple-500 animate-spin" size={24} />
+                      ) : (
+                        <Camera className="text-gray-400" size={24} />
+                      )}
+                    </div>
+                  )}
+                  <input
+                    ref={(el) => (fileInputRefs.current[i] = el)}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handlePhotoSelect(i, file);
+                      }
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStep(3)}
+                disabled={uploading || registering}
+                className="flex-1 py-4 rounded-xl border-2 border-gray-200 text-gray-700 font-medium hover:border-gray-300 transition-all disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleComplete}
+                disabled={photos.length < 2 || uploading || registering}
+                className="flex-1 py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {registering ? (
+                  <>
+                    <Loader className="animate-spin" size={20} />
+                    Creating Account...
+                  </>
+                ) : (
+                  'Get Started'
+                )}
               </button>
             </div>
           </div>

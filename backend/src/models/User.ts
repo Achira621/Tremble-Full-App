@@ -64,6 +64,29 @@ const userSchema = new Schema<IUserDocument>(
             maxlength: [150, 'Bio cannot exceed 150 characters'],
             trim: true,
         },
+        age: {
+            type: Number,
+            min: [18, 'Must be at least 18 years old'],
+            max: [120, 'Invalid age'],
+        },
+        interests: [{
+            type: String,
+            trim: true,
+        }],
+        photos: [{
+            url: {
+                type: String,
+                required: true,
+            },
+            order: {
+                type: Number,
+                default: 0,
+            },
+            uploadedAt: {
+                type: Date,
+                default: Date.now,
+            },
+        }],
         profilePhoto: {
             type: String,
             default: '',

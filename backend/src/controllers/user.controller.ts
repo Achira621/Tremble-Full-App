@@ -209,10 +209,42 @@ export const addVibe = async (req: AuthRequest, res: Response): Promise<void> =>
     }
 };
 
+// @desc    Upload photo
+// @route   POST /api/users/upload-photo
+// @access  Public (for onboarding)
+export const uploadPhoto = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        if (!req.file) {
+            res.status(400).json({
+                success: false,
+                error: 'No file uploaded',
+            });
+            return;
+        }
+
+        // Cloudinary URL is in req.file.path
+        const photoUrl = (req.file as any).path;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                url: photoUrl,
+            },
+        });
+    } catch (error: any) {
+        logger.error('Upload photo error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to upload photo',
+        });
+    }
+};
+
 export default {
     getUserProfile,
     updateProfile,
     searchUsers,
     addVibe,
+    uploadPhoto,
     updateProfileValidation,
 };
