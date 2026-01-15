@@ -1,0 +1,381 @@
+// API Configuration
+export const API_BASE_URL = 'http://localhost:5000';
+
+// Types
+export interface ApiResponse<T = any> {
+    success: boolean;
+    data?: T;
+    error?: string;
+    message?: string;
+}
+
+export interface AuthResponse {
+    user: UserProfile;
+    token: string;
+}
+
+export interface UserProfile {
+    id: string;
+    name: string;
+    age: number;
+    bio: string;
+    photos: UserPhoto[];
+    interests: string[];
+    vibeBadges: string[];
+    location?: {
+        city?: string;
+    };
+}
+
+export interface UserPhoto {
+    id: string;
+    url: string;
+    order: number;
+    uploadedAt: string;
+}
+
+export interface DiscoveryCard {
+    user: UserProfile;
+    commonInterests: string[];
+    matchScore: number;
+}
+
+export interface Match {
+    id: string;
+    user1Id: string;
+    user2Id: string;
+    matchedAt: string;
+    conversationId: string;
+    isActive: boolean;
+}
+
+export interface Message {
+    id: string;
+    conversationId: string;
+    senderId: string;
+    receiverId: string;
+    content: string;
+    isRead: boolean;
+    createdAt: string;
+}
+
+export interface Conversation {
+    id: string;
+    user1Id: string;
+    user2Id: string;
+    matchId: string;
+    lastMessageAt?: string;
+    unreadCount: { [userId: string]: number };
+    createdAt: string;
+}
+
+// Token Management
+export const TokenManager = {
+    getToken: (): string | null => {
+        return localStorage.getItem('tremble_token');
+    },
+
+    setToken: (token: string): void => {
+        localStorage.setItem('tremble_token', token);
+    },
+
+    removeToken: (): void => {
+        localStorage.removeItem('tremble_token');
+    },
+
+    getAuthHeaders: (): HeadersInit => {
+        const token = TokenManager.getToken();
+        return {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        };
+    },
+};
+
+// API Client
+class TrembleAPI {
+    private baseUrl: string;
+
+    constructor(baseUrl: string) {
+        this.baseUrl = baseUrl;
+    }
+
+    private async request<T>(
+        endpoint: string,
+        options: RequestInit = {}
+    ): Promise<ApiResponse<T>> {
+        try {
+            const response = await fetch(`${this.baseUrl}${endpoint}`, {
+                ...options,
+                headers: {
+                    ...TokenManager.getAuthHeaders(),
+                    ...options.headers,
+                },
+            });
+
+            const data = await response.json();
+            return data;
+        } catch (error: any) {
+            return {
+                success: false,
+                error: error.message || 'Network error',
+            };
+        }
+    }
+
+    // Authentication
+    auth = {
+        register: async (data: {
+            email: string;
+            username: string;
+            password: string;
+            name: string;
+            age: number;
+        }): Promise<ApiResponse<AuthResponse>> => {
+            const response = await this.request<AuthResponse>('/api/auth/register', {
+                method: 'POST',
+                body: JSON.stringify(data),
+            });
+
+            if (response.success && response.data?.token) {
+                TokenManager.setToken(response.data.token);
+            }
+
+            return response;
+        },
+
+        login: async (email: string, password: string): Promise<ApiResponse<AuthResponse>> => {
+            const response = await this.request<AuthResponse>('/api/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({ email, password }),
+            });
+
+            if (response.success && response.data?.token) {
+                TokenManager.setToken(response.data.token);
+            }
+
+            return response;
+        },
+
+        getCurrentUser: async (): Promise<ApiResponse<UserProfile>> => {
+            return this.request<UserProfile>('/api/auth/me');
+        },
+
+        logout: async (): Promise<ApiResponse> => {
+            const response = await this.request('/api/auth/logout', {
+                method: 'POST',
+            });
+            TokenManager.removeToken();
+            return response;
+        },
+    };
+
+    // Users
+    users = {
+        getProfile: async (userId: string): Promise<ApiResponse<UserProfile>> => {
+            return this.request<UserProfile>(`/api/users/${userId}`);
+        },
+
+        updateProfile: async (data: Partial<UserProfile>): Promise<ApiResponse<UserProfile>> => {
+            return this.request<UserProfile>('/api/users/profile', {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            });
+        },
+
+        uploadPhoto: async (photoUrl: string): Promise<ApiResponse<UserProfile>> => {
+            return this.request<UserProfile>('/api/users/photos', {
+                method: 'POST',
+                body: JSON.stringify({ photoUrl }),
+            });
+        },
+
+        deletePhoto: async (photoId: string): Promise<ApiResponse<UserProfile>> => {
+            return this.request<UserProfile>(`/api/users/photos/${photoId}`, {
+                method: 'DELETE',
+            });
+        },
+
+        updateSettings: async (settings: any): Promise<ApiResponse<UserProfile>> => {
+            return this.request<UserProfile>('/api/users/settings', {
+                method: 'PUT',
+                body: JSON.stringify(settings),
+            });
+        },
+
+        getStats: async (): Promise<ApiResponse<any>> => {
+            return this.request('/api/users/stats');
+        },
+    };
+
+    // Discovery
+    discovery = {
+        getFeed: async (page: number = 1, limit: number = 10): Promise<ApiResponse<{
+            data: DiscoveryCard[];
+            page: number;
+            limit: number;
+            total: number;
+            hasMore: boolean;
+        }>> => {
+            return this.request(`/api/discovery/feed?page=${page}&limit=${limit}`);
+        },
+
+        refresh: async (): Promise<ApiResponse> => {
+            return this.request('/api/discovery/refresh', {
+                method: 'POST',
+            });
+        },
+
+        updatePreferences: async (preferences: any): Promise<ApiResponse> => {
+            return this.request('/api/discovery/preferences', {
+                method: 'PUT',
+                body: JSON.stringify(preferences),
+            });
+        },
+    };
+
+    // Connections
+    connections = {
+        like: async (targetUserId: string): Promise<ApiResponse<{ matched: boolean; match?: Match }>> => {
+            return this.request('/api/connections/like', {
+                method: 'POST',
+                body: JSON.stringify({ targetUserId }),
+            });
+        },
+
+        pass: async (targetUserId: string): Promise<ApiResponse> => {
+            return this.request('/api/connections/pass', {
+                method: 'POST',
+                body: JSON.stringify({ targetUserId }),
+            });
+        },
+
+        tremble: async (targetUserId: string): Promise<ApiResponse<{ matched: boolean; match?: Match }>> => {
+            return this.request('/api/connections/tremble', {
+                method: 'POST',
+                body: JSON.stringify({ targetUserId }),
+            });
+        },
+
+        getMatches: async (): Promise<ApiResponse<Array<{ match: Match; user: UserProfile }>>> => {
+            return this.request('/api/connections/matches');
+        },
+
+        unmatch: async (matchId: string): Promise<ApiResponse> => {
+            return this.request(`/api/connections/${matchId}`, {
+                method: 'DELETE',
+            });
+        },
+    };
+
+    // Messages
+    messages = {
+        getConversations: async (): Promise<ApiResponse<Array<{
+            conversation: Conversation;
+            otherUser: UserProfile;
+            lastMessage?: Message;
+        }>>> => {
+            return this.request('/api/messages/conversations');
+        },
+
+        getMessages: async (otherUserId: string): Promise<ApiResponse<Message[]>> => {
+            return this.request(`/api/messages/${otherUserId}`);
+        },
+
+        send: async (receiverId: string, content: string): Promise<ApiResponse<Message>> => {
+            return this.request('/api/messages/send', {
+                method: 'POST',
+                body: JSON.stringify({ receiverId, content }),
+            });
+        },
+
+        markAsRead: async (messageId: string): Promise<ApiResponse> => {
+            return this.request(`/api/messages/${messageId}/read`, {
+                method: 'PUT',
+            });
+        },
+
+        getIcebreakers: async (): Promise<ApiResponse<any[]>> => {
+            return this.request('/api/messages/icebreakers');
+        },
+    };
+
+    // Posts
+    posts = {
+        create: async (photoUrl: string, caption: string): Promise<ApiResponse<any>> => {
+            return this.request('/api/posts', {
+                method: 'POST',
+                body: JSON.stringify({ photoUrl, caption }),
+            });
+        },
+
+        getFeed: async (): Promise<ApiResponse<Array<{ post: any; user: UserProfile }>>> => {
+            return this.request('/api/posts/feed');
+        },
+
+        getPost: async (postId: string): Promise<ApiResponse<any>> => {
+            return this.request(`/api/posts/${postId}`);
+        },
+
+        getUserPosts: async (userId: string): Promise<ApiResponse<any[]>> => {
+            return this.request(`/api/posts/user/${userId}`);
+        },
+
+        delete: async (postId: string): Promise<ApiResponse> => {
+            return this.request(`/api/posts/${postId}`, {
+                method: 'DELETE',
+            });
+        },
+    };
+
+    // Safety
+    safety = {
+        report: async (data: {
+            reportedUserId?: string;
+            reportedPostId?: string;
+            reason: string;
+            description?: string;
+        }): Promise<ApiResponse> => {
+            return this.request('/api/safety/report', {
+                method: 'POST',
+                body: JSON.stringify(data),
+            });
+        },
+
+        block: async (blockedUserId: string): Promise<ApiResponse> => {
+            return this.request('/api/safety/block', {
+                method: 'POST',
+                body: JSON.stringify({ blockedUserId }),
+            });
+        },
+
+        unblock: async (blockedUserId: string): Promise<ApiResponse> => {
+            return this.request(`/api/safety/block/${blockedUserId}`, {
+                method: 'DELETE',
+            });
+        },
+
+        getBlocked: async (): Promise<ApiResponse<any[]>> => {
+            return this.request('/api/safety/blocked');
+        },
+    };
+
+    // Vibes
+    vibes = {
+        getUserVibes: async (userId: string): Promise<ApiResponse<any[]>> => {
+            return this.request(`/api/vibes/${userId}`);
+        },
+
+        generate: async (): Promise<ApiResponse<any[]>> => {
+            return this.request('/api/vibes/generate', {
+                method: 'POST',
+            });
+        },
+    };
+}
+
+// Create and export singleton instance
+export const api = new TrembleAPI(API_BASE_URL);
+
+// Export API client
+export default api;
