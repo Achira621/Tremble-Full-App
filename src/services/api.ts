@@ -157,16 +157,13 @@ class TrembleAPI {
             return response;
         },
 
-        getCurrentUser: async (): Promise<ApiResponse<UserProfile>> => {
-            return this.request<UserProfile>('/api/auth/me');
+        logout: async (): Promise<ApiResponse> => {
+            TokenManager.removeToken();
+            return { success: true };
         },
 
-        logout: async (): Promise<ApiResponse> => {
-            const response = await this.request('/api/auth/logout', {
-                method: 'POST',
-            });
-            TokenManager.removeToken();
-            return response;
+        getCurrentUser: async (): Promise<ApiResponse<UserProfile>> => {
+            return this.request<UserProfile>('/api/auth/me');
         },
     };
 

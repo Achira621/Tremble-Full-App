@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Home, Compass, MessageCircle, User, PlusCircle } from 'lucide-react';
-import { Onboarding, UserProfile } from '@/app/components/onboarding';
-import { Discovery } from '@/app/components/discovery';
-import { Feed } from '@/app/components/feed';
-import { Messages } from '@/app/components/messages';
-import { CreateGlimpseModal } from '@/app/components/CreateGlimpseModal';
+import { Onboarding, UserProfile } from './components/onboarding';
+import { Discovery } from './components/discovery';
+import { Feed } from './components/feed';
+import { Messages } from './components/messages';
+import { CreateGlimpseModal } from './components/CreateGlimpseModal';
+import { TokenManager } from '../services/api';
+import api from '../services/api';
 
 type View = 'feed' | 'discover' | 'messages' | 'profile';
 
@@ -25,6 +27,29 @@ export default function App() {
   const [passes, setPasses] = useState<Profile[]>([]);
   const [superLikes, setSuperLikes] = useState<Profile[]>([]);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const token = TokenManager.getToken();
+      if (token) {
+        try {
+          // Fetch current user profile
+          const response = await api.auth.getCurrentUser();
+          if (response.success && response.data) {
+            setUserProfile(response.data);
+            setHasCompletedOnboarding(true);
+          }
+        } catch (error) {
+          console.error('Session restore failed:', error);
+          TokenManager.removeToken();
+        }
+      }
+      setIsLoading(false);
+    };
+    checkSession();
+  }, []);
 
   const handleOnboardingComplete = (profile: UserProfile) => {
     setUserProfile(profile);
@@ -44,6 +69,18 @@ export default function App() {
     setSuperLikes([...superLikes, profile]);
     // In a real app, notify the other user
   };
+
+  // Show loading while checking session
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show onboarding if not completed
   if (!hasCompletedOnboarding || !userProfile) {
