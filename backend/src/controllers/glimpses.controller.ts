@@ -11,14 +11,21 @@ import mongoose from 'mongoose';
 // ==========================================
 export const createGlimpse = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { photoUrl, caption, mood, location, musicTrack, tags } = req.body;
+        const { caption, mood, location, musicTrack, tags } = req.body;
         const userId = req.user.id;
+
+        // Get photo URL from uploaded file (Cloudinary returns it in req.file)
+        if (!req.file) {
+            throw new AppError('Photo is required', 400);
+        }
+
+        const photoUrl = (req.file as any).path; // Cloudinary stores URL in 'path' property
 
         const glimpse = await Glimpse.create({
             user: userId,
             photoUrl,
             caption,
-            mood,
+            mood: mood || 'vibing',
             location,
             musicTrack,
             tags: tags || [],

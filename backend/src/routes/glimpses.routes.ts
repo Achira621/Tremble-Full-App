@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import * as glimpseController from '../controllers/glimpses.controller';
-import { protect } from '../middleware/auth.middleware'; // Assuming Finsta has this
+import { protect } from '../middleware/auth.middleware';
+import { upload } from '../middleware/upload.middleware';
 
 const router = Router();
 
 // Apply auth middleware to all routes
 router.use(protect);
 
-router.post('/', glimpseController.createGlimpse);
+router.post('/', upload.single('photo'), glimpseController.createGlimpse);
 router.get('/feed', glimpseController.getFeed);
 router.get('/my', glimpseController.getMyGlimpses);
 
