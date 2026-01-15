@@ -88,7 +88,12 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col relative">
+      {/* Version Badge */}
+      <div className="absolute top-2 left-2 z-[100] bg-black/50 text-white text-[10px] px-2 py-1 rounded-full pointer-events-none">
+        v1.0.4
+      </div>
+
       {/* Upload Modal */}
       {showUploadModal && (
         <CreateGlimpseModal
