@@ -7,7 +7,8 @@ import {
     MoreVert,
     MusicNote,
     Close,
-    Bolt
+    Bolt,
+    Camera
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api';
@@ -149,6 +150,31 @@ const GlimpseFeed: React.FC<GlimpseFeedProps> = ({ onClose }) => {
                 background: '#000'
             }}>
                 <CircularProgress sx={{ color: '#FF4B8B' }} />
+            </Box>
+        );
+    }
+
+    // Empty state
+    if (glimpses.length === 0) {
+        return (
+            <Box sx={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                alignItems: 'center',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                textAlign: 'center',
+                p: 4
+            }}>
+                <Camera size={64} style={{ marginBottom: 16, opacity: 0.8 }} />
+                <Typography variant="h5" sx={{ fontWeight: 700, mb: 1 }}>
+                    No Glimpses Yet
+                </Typography>
+                <Typography variant="body2" sx={{ opacity: 0.9, maxWidth: 300 }}>
+                    Be the first to share a moment! Upload a photo to get started.
+                </Typography>
             </Box>
         );
     }
