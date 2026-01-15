@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Home, Compass, MessageCircle, User } from 'lucide-react';
+import { Home, Compass, MessageCircle, User, PlusCircle } from 'lucide-react';
 import { Onboarding, UserProfile } from '@/app/components/onboarding';
 import { Discovery } from '@/app/components/discovery';
 import { Feed } from '@/app/components/feed';
 import { Messages } from '@/app/components/messages';
+import { CreateGlimpseModal } from '@/app/components/CreateGlimpseModal';
 
 type View = 'feed' | 'discover' | 'messages' | 'profile';
 
@@ -23,6 +24,7 @@ export default function App() {
   const [likes, setLikes] = useState<Profile[]>([]);
   const [passes, setPasses] = useState<Profile[]>([]);
   const [superLikes, setSuperLikes] = useState<Profile[]>([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const handleOnboardingComplete = (profile: UserProfile) => {
     setUserProfile(profile);
@@ -50,6 +52,17 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col">
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <CreateGlimpseModal
+          onClose={() => setShowUploadModal(false)}
+          onSuccess={() => {
+            // Refresh feed or show success message
+            setShowUploadModal(false);
+          }}
+        />
+      )}
+
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         {currentView === 'feed' && (
@@ -167,41 +180,50 @@ export default function App() {
 
       {/* Bottom Navigation */}
       <nav className="bg-white border-t border-gray-200 safe-bottom">
-        <div className="flex items-center justify-around h-16 max-w-2xl mx-auto px-4">
+        <div className="flex items-center justify-around h-16 max-w-2xl mx-auto px-4 relative">
           <button
             onClick={() => setCurrentView('feed')}
-            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${
-              currentView === 'feed' ? 'text-purple-600' : 'text-gray-400'
-            }`}
+            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${currentView === 'feed' ? 'text-purple-600' : 'text-gray-400'
+              }`}
           >
             <Home size={24} fill={currentView === 'feed' ? 'currentColor' : 'none'} />
             <span className="text-xs font-medium">Feed</span>
           </button>
+
           <button
             onClick={() => setCurrentView('discover')}
-            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${
-              currentView === 'discover' ? 'text-purple-600' : 'text-gray-400'
-            }`}
+            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${currentView === 'discover' ? 'text-purple-600' : 'text-gray-400'
+              }`}
           >
             <Compass size={24} fill={currentView === 'discover' ? 'currentColor' : 'none'} />
             <span className="text-xs font-medium">Discover</span>
           </button>
+
+          {/* ADD BUTTON (Middle) */}
+          <div className="relative -top-5">
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="w-14 h-14 bg-gradient-to-r from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white shadow-lg shadow-purple-500/40 hover:scale-105 transition-transform"
+            >
+              <PlusCircle size={28} />
+            </button>
+          </div>
+
           <button
             onClick={() => setCurrentView('messages')}
-            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors relative ${
-              currentView === 'messages' ? 'text-purple-600' : 'text-gray-400'
-            }`}
+            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors relative ${currentView === 'messages' ? 'text-purple-600' : 'text-gray-400'
+              }`}
           >
             <MessageCircle size={24} fill={currentView === 'messages' ? 'currentColor' : 'none'} />
             <span className="text-xs font-medium">Messages</span>
             {/* Notification badge */}
             <div className="absolute top-1 right-1 w-2 h-2 bg-pink-500 rounded-full" />
           </button>
+
           <button
             onClick={() => setCurrentView('profile')}
-            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${
-              currentView === 'profile' ? 'text-purple-600' : 'text-gray-400'
-            }`}
+            className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${currentView === 'profile' ? 'text-purple-600' : 'text-gray-400'
+              }`}
           >
             <User size={24} fill={currentView === 'profile' ? 'currentColor' : 'none'} />
             <span className="text-xs font-medium">Profile</span>

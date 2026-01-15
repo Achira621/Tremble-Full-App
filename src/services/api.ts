@@ -360,6 +360,41 @@ class TrembleAPI {
         },
     };
 
+    // Glimpses
+    glimpses = {
+        getFeed: async (limit = 20): Promise<ApiResponse<any[]>> => {
+            return this.request(`/api/glimpses/feed?limit=${limit}`);
+        },
+
+        create: async (formData: FormData): Promise<ApiResponse<any>> => {
+            // For file upload, we need special handling if request() enforces JSON
+            // But if request() wrapper is simple, we can pass body as FormData
+            // We might need to ensure Content-Type is NOT set to application/json
+
+            return this.request('/api/glimpses', {
+                method: 'POST',
+                body: formData,
+                // If this.request sets Content-Type automatically, we might have an issue.
+                // Assuming this.request checks if body is FormData or uses standard fetch headers.
+            });
+        },
+
+        like: async (id: string): Promise<ApiResponse> => {
+            return this.request(`/api/glimpses/${id}/like`, { method: 'POST' });
+        },
+
+        tremble: async (id: string): Promise<ApiResponse> => {
+            return this.request(`/api/glimpses/${id}/tremble`, { method: 'POST' });
+        },
+
+        recordView: async (id: string, duration: number): Promise<ApiResponse> => {
+            return this.request(`/api/glimpses/${id}/view`, {
+                method: 'POST',
+                body: JSON.stringify({ duration }),
+            });
+        },
+    };
+
     // Vibes
     vibes = {
         getUserVibes: async (userId: string): Promise<ApiResponse<any[]>> => {
