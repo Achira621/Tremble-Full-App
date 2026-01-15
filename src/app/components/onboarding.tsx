@@ -16,6 +16,7 @@ export interface UserProfile {
 
 export function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(1);
+  const [isSignIn, setIsSignIn] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [profile, setProfile] = useState<Omit<UserProfile, 'photos'>>({
@@ -135,9 +136,14 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         {/* Step 1: Account Info */}
         {step === 1 && (
           <div className="space-y-6">
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              Create your account
-            </h2>
+            <div>
+              <h2 className="text-3xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
+                {isSignIn ? 'Welcome back!' : 'Create your account'}
+              </h2>
+              <p className="text-gray-600 mt-2">
+                {isSignIn ? 'Sign in to continue' : 'Join Tremble today'}
+              </p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
               <input
@@ -155,17 +161,57 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 focus:outline-none transition-colors"
-                placeholder="Create a password"
+                placeholder={isSignIn ? 'Enter your password' : 'Create a password'}
               />
             </div>
             <button
-              onClick={() => setStep(2)}
-              disabled={!email || !password || password.length < 6}
+              onClick={async () => {
+                if (isSignIn) {
+                  // Handle login
+                  try {
+                    setRegistering(true);
+                    const response = await api.auth.login(email, password);
+                    if (response.success && response.data) {
+                      // Fetch full profile
+                      const profileResponse = await api.auth.getCurrentUser();
+                      if (profileResponse.success && profileResponse.data) {
+                        onComplete(profileResponse.data as any);
+                      }
+                    } else {
+                      alert(response.error || 'Login failed');
+                    }
+                  } catch (error) {
+                    alert('Login failed. Please try again.');
+                  } finally {
+                    setRegistering(false);
+                  }
+                } else {
+                  setStep(2);
+                }
+              }}
+              disabled={!email || !password || (password.length < 6 && !isSignIn) || registering}
               className="w-full py-4 rounded-xl bg-gradient-to-r from-pink-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Continue
-              <ArrowRight size={20} />
+              {registering ? (
+                <>
+                  <Loader className="animate-spin" size={20} />
+                  {isSignIn ? 'Signing in...' : 'Continue'}
+                </>
+              ) : (
+                <>
+                  {isSignIn ? 'Sign In' : 'Continue'}
+                  {!isSignIn && <ArrowRight size={20} />}
+                </>
+              )}
             </button>
+            <div className="text-center">
+              <button
+                onClick={() => setIsSignIn(!isSignIn)}
+                className="text-sm text-purple-600 hover:text-purple-700 font-medium"
+              >
+                {isSignIn ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -237,8 +283,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                   key={interest}
                   onClick={() => handleInterestToggle(interest)}
                   className={`px-4 py-2 rounded-full border-2 transition-all ${profile.interests.includes(interest)
-                      ? 'border-purple-500 bg-purple-50 text-purple-700'
-                      : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-purple-500 bg-purple-50 text-purple-700'
+                    : 'border-gray-200 hover:border-gray-300'
                     }`}
                 >
                   {interest}
@@ -276,8 +322,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 <div
                   key={i}
                   className={`aspect-square rounded-2xl border-2 border-dashed transition-all relative ${photos[i]
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-gray-300 hover:border-gray-400 cursor-pointer'
+                    ? 'border-purple-500 bg-purple-50'
+                    : 'border-gray-300 hover:border-gray-400 cursor-pointer'
                     }`}
                   onClick={() => {
                     if (!photos[i] && !uploading) {
