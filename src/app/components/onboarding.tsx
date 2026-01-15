@@ -51,7 +51,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       formData.append('photo', file);
 
       // Upload to backend (which uploads to Cloudinary)
-      const response = await fetch(`${api.auth.getCurrentUser ? '' : ''}https://tremble-full-app-85d9.vercel.app/api/users/upload-photo`, {
+      const response = await fetch('/api/users/upload-photo', {
         method: 'POST',
         body: formData,
       });
