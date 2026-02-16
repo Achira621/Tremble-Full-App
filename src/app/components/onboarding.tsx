@@ -48,21 +48,24 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     try {
       setUploading(true);
       const formData = new FormData();
-      formData.append('photo', file);
+      formData.append('file', file);
+      formData.append('upload_preset', 'tremble_unsigned');
+      formData.append('folder', 'tremble_uploads');
 
-      // Upload to backend (which uploads to Cloudinary)
-      const response = await fetch(`${API_BASE_URL}/api/users/upload-photo`, {
+      // Upload directly to Cloudinary (bypasses backend)
+      const response = await fetch('https://api.cloudinary.com/v1_1/dodxjkgsx/image/upload', {
         method: 'POST',
         body: formData,
       });
 
       const data = await response.json();
 
-      if (data.success && data.data?.url) {
+      if (data.secure_url) {
         const newPhotos = [...photos];
-        newPhotos[index] = data.data.url;
+        newPhotos[index] = data.secure_url;
         setPhotos(newPhotos.filter(p => p)); // Remove empty slots
       } else {
+        console.error('Cloudinary response:', data);
         alert('Photo upload failed. Please try again.');
       }
     } catch (error) {
