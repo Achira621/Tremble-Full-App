@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import postRoutes from './routes/post.routes';
 import connectionRoutes from './routes/connection.routes';
+import matchRoutes from './routes/match.routes';
 import glimpseRoutes from './routes/glimpses.routes';
 import engagementRoutes from './routes/engagement.routes';
 
@@ -68,6 +69,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', apiLimiter, userRoutes);
 app.use('/api/posts', apiLimiter, postRoutes);
 app.use('/api/connections', apiLimiter, connectionRoutes);
+app.use('/api/matches', apiLimiter, matchRoutes);
 app.use('/api/glimpses', apiLimiter, glimpseRoutes);
 app.use('/api/engagement', apiLimiter, engagementRoutes);
 

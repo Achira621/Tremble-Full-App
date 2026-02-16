@@ -1,261 +1,228 @@
-import { useState } from 'react';
-import { Heart, X, Star, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Heart, X, Star, Info, Loader } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-interface Profile {
-  id: string;
-  name: string;
-  age: string;
-  bio: string;
-  interests: string[];
-  photos: string[];
-}
+import api, { UserProfile } from '../../services/api';
 
 interface DiscoveryProps {
-  onLike: (profile: Profile) => void;
-  onPass: (profile: Profile) => void;
-  onSuperLike: (profile: Profile) => void;
+  onLike: (profile: UserProfile) => void;
+  onPass: (profile: UserProfile) => void;
+  onSuperLike: (profile: UserProfile) => void;
 }
 
-// Mock profiles for discovery
-const mockProfiles: Profile[] = [
-  {
-    id: '1',
-    name: 'Alex',
-    age: '26',
-    bio: 'Coffee enthusiast ☕ | Adventure seeker 🏔️ | Always up for trying new restaurants',
-    interests: ['Travel', 'Photography', 'Coffee', 'Hiking'],
-    photos: [
-      'https://picsum.photos/400/600?random=10',
-      'https://picsum.photos/400/600?random=11',
-      'https://picsum.photos/400/600?random=12'
-    ]
-  },
-  {
-    id: '2',
-    name: 'Jordan',
-    age: '24',
-    bio: 'Artist 🎨 | Music lover 🎵 | Weekend warrior',
-    interests: ['Art', 'Music', 'Fashion', 'Dancing'],
-    photos: [
-      'https://picsum.photos/400/600?random=20',
-      'https://picsum.photos/400/600?random=21',
-      'https://picsum.photos/400/600?random=22'
-    ]
-  },
-  {
-    id: '3',
-    name: 'Sam',
-    age: '28',
-    bio: 'Fitness junkie 💪 | Cooking experiments in progress 👨‍🍳',
-    interests: ['Fitness', 'Cooking', 'Travel', 'Nature'],
-    photos: [
-      'https://picsum.photos/400/600?random=30',
-      'https://picsum.photos/400/600?random=31',
-      'https://picsum.photos/400/600?random=32'
-    ]
-  },
-  {
-    id: '4',
-    name: 'Taylor',
-    age: '25',
-    bio: 'Book nerd 📚 | Plant parent 🌱 | Dog lover 🐕',
-    interests: ['Reading', 'Nature', 'Photography', 'Coffee'],
-    photos: [
-      'https://picsum.photos/400/600?random=40',
-      'https://picsum.photos/400/600?random=41',
-      'https://picsum.photos/400/600?random=42'
-    ]
-  },
-  {
-    id: '5',
-    name: 'Casey',
-    age: '27',
-    bio: 'Tech geek 💻 | Gamer 🎮 | Amateur photographer 📷',
-    interests: ['Gaming', 'Photography', 'Technology', 'Music'],
-    photos: [
-      'https://picsum.photos/400/600?random=50',
-      'https://picsum.photos/400/600?random=51',
-      'https://picsum.photos/400/600?random=52'
-    ]
-  }
-];
-
 export function Discovery({ onLike, onPass, onSuperLike }: DiscoveryProps) {
-  const [profiles, setProfiles] = useState(mockProfiles);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
   const [direction, setDirection] = useState<'left' | 'right' | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const currentProfile = profiles[currentIndex];
+  useEffect(() => {
+    loadDiscoveryFeed();
+  }, []);
 
-  const handleSwipe = (action: 'like' | 'pass' | 'superlike') => {
-    if (!currentProfile) return;
+  const loadDiscoveryFeed = async () => {
+    try {
+      setLoading(true);
+      const response = await api.discovery.getFeed();
+      if (response.success && response.data) {
+        setProfiles(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load discovery feed:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSwipe = async (action: 'like' | 'pass' | 'superlike') => {
+    const currentProfile = profiles[currentIndex];
+    if (!currentProfile || actionLoading) return;
 
     setDirection(action === 'pass' ? 'left' : 'right');
+    setActionLoading(true);
 
-    setTimeout(() => {
+    try {
       if (action === 'like') {
-        onLike(currentProfile);
+        const response = await api.matches.like(currentProfile.id);
+        if (response.success) {
+          onLike(currentProfile);
+        }
       } else if (action === 'pass') {
+        await api.matches.pass(currentProfile.id);
         onPass(currentProfile);
       } else if (action === 'superlike') {
+        await api.matches.like(currentProfile.id);
         onSuperLike(currentProfile);
       }
 
-      setCurrentIndex(prev => prev + 1);
-      setCurrentPhotoIndex(0);
-      setShowInfo(false);
-      setDirection(null);
-    }, 300);
+      setTimeout(() => {
+        setCurrentIndex(prev => prev + 1);
+        setCurrentPhotoIndex(0);
+        setDirection(null);
+        setActionLoading(false);
+      }, 300);
+    } catch (error) {
+      console.error('Error processing swipe:', error);
+      setActionLoading(false);
+    }
   };
 
-  if (!currentProfile) {
+  const currentProfile = profiles[currentIndex];
+
+  if (loading) {
     return (
-      <div className="h-full flex items-center justify-center p-6">
-        <div className="text-center space-y-4">
-          <div className="text-6xl">🎉</div>
-          <h2 className="text-2xl font-bold text-gray-800">That's everyone!</h2>
-          <p className="text-gray-600">Check back later for more profiles</p>
-        </div>
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+        <Loader className="animate-spin text-purple-600" size={40} />
       </div>
     );
   }
 
+  if (!currentProfile || currentIndex >= profiles.length) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-8 text-center">
+        <div className="text-6xl mb-4">👋</div>
+        <h2 className="text-2xl font-bold text-gray-800 mb-2">No more profiles</h2>
+        <p className="text-gray-600 mb-6">Check back later for more people!</p>
+        <button
+          onClick={loadDiscoveryFeed}
+          className="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-full font-medium"
+        >
+          Refresh
+        </button>
+      </div>
+    );
+  }
+
+  const profilePhotos = (currentProfile as any).photos || [];
+  const currentPhoto = profilePhotos[currentPhotoIndex]?.url || `https://i.pravatar.cc/400/600?u=${currentProfile.id}`;
+
   return (
-    <div className="h-full flex flex-col items-center justify-center p-4 bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
-      <div className="w-full max-w-sm">
-        {/* Card Stack */}
-        <div className="relative h-[600px] mb-6">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentProfile.id}
-              initial={{ scale: 0.95, opacity: 0, y: 50 }}
-              animate={{
-                scale: 1,
-                opacity: 1,
-                y: 0,
-                x: direction === 'left' ? -400 : direction === 'right' ? 400 : 0,
-                rotate: direction === 'left' ? -20 : direction === 'right' ? 20 : 0
-              }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="absolute inset-0 bg-white rounded-3xl shadow-2xl overflow-hidden"
-            >
-              {/* Photo */}
-              <div className="relative h-full">
-                <img
-                  src={currentProfile.photos[currentPhotoIndex]}
-                  alt={currentProfile.name}
-                  className="w-full h-full object-cover"
-                />
+    <div className="h-full flex flex-col bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+      <div className="flex-1 relative overflow-hidden">
+        <AnimatePresence>
+          <motion.div
+            key={currentProfile.id}
+            initial={{ x: direction === 'left' ? -300 : direction === 'right' ? 300 : 0, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: direction === 'left' ? -300 : 300, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="absolute inset-0 flex items-center justify-center p-4"
+          >
+            <div className="relative w-full max-w-md aspect-[3/4] rounded-3xl overflow-hidden shadow-2xl">
+              <motion.img
+                src={currentPhoto}
+                alt={currentProfile.name}
+                className="w-full h-full object-cover"
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.7}
+                onDragEnd={(_e, { offset, velocity }) => {
+                  if (offset.x > 100) {
+                    handleSwipe('like');
+                  } else if (offset.x < -100) {
+                    handleSwipe('pass');
+                  }
+                }}
+              />
 
-                {/* Photo Indicators */}
-                <div className="absolute top-4 left-4 right-4 flex gap-2">
-                  {currentProfile.photos.map((_, i) => (
-                    <div
-                      key={i}
-                      className={`h-1 flex-1 rounded-full transition-colors ${
-                        i === currentPhotoIndex ? 'bg-white' : 'bg-white/40'
-                      }`}
-                      onClick={() => setCurrentPhotoIndex(i)}
-                    />
-                  ))}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+
+              <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
+                <div className="flex items-end gap-3 mb-2">
+                  <h2 className="text-3xl font-bold">{currentProfile.name}</h2>
+                  <span className="text-xl font-medium mb-1">{currentProfile.age}</span>
                 </div>
 
-                {/* Info Button */}
-                <button
-                  onClick={() => setShowInfo(!showInfo)}
-                  className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur flex items-center justify-center shadow-lg"
-                >
-                  <Info size={20} className="text-gray-700" />
-                </button>
-
-                {/* Gradient Overlay */}
-                <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
-
-                {/* Profile Info */}
-                <div className="absolute bottom-0 left-0 right-0 p-6 text-white">
-                  <h2 className="text-3xl font-bold mb-1">
-                    {currentProfile.name}, {currentProfile.age}
-                  </h2>
-                  {!showInfo && (
-                    <p className="text-sm text-white/90 line-clamp-2">{currentProfile.bio}</p>
-                  )}
-
-                  {/* Extended Info */}
-                  <AnimatePresence>
-                    {showInfo && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="mt-4 space-y-3"
-                      >
-                        <p className="text-sm text-white/90">{currentProfile.bio}</p>
-                        <div>
-                          <p className="text-xs font-medium text-white/70 mb-2">INTERESTS</p>
-                          <div className="flex flex-wrap gap-2">
-                            {currentProfile.interests.map((interest) => (
-                              <span
-                                key={interest}
-                                className="px-3 py-1 rounded-full bg-white/20 backdrop-blur text-xs"
-                              >
-                                {interest}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {/* Like/Pass Overlays */}
-                {direction === 'right' && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-green-500 text-8xl font-bold rotate-[-20deg] border-8 border-green-500 px-12 py-4 rounded-2xl">
-                      LIKE
-                    </div>
-                  </div>
+                {currentProfile.bio && (
+                  <p className="text-white/80 text-sm line-clamp-2 mb-3">{currentProfile.bio}</p>
                 )}
-                {direction === 'left' && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-red-500 text-8xl font-bold rotate-[20deg] border-8 border-red-500 px-12 py-4 rounded-2xl">
-                      NOPE
-                    </div>
+
+                {currentProfile.interests && currentProfile.interests.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {currentProfile.interests.slice(0, 4).map((interest, i) => (
+                      <span
+                        key={i}
+                        className="px-3 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs"
+                      >
+                        {interest}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
-            </motion.div>
-          </AnimatePresence>
 
-          {/* Next Card Preview */}
-          {profiles[currentIndex + 1] && (
-            <div className="absolute inset-0 bg-white rounded-3xl shadow-xl -z-10 scale-95" />
-          )}
-        </div>
+              {showInfo && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute inset-0 bg-black/80 flex items-center justify-center p-6"
+                >
+                  <div className="text-white text-center">
+                    <h3 className="text-xl font-bold mb-4">More about {currentProfile.name}</h3>
+                    <p className="text-white/80">{currentProfile.bio || 'No bio available'}</p>
+                    {currentProfile.interests && (
+                      <div className="flex flex-wrap gap-2 justify-center mt-4">
+                        {currentProfile.interests.map((interest, i) => (
+                          <span key={i} className="px-3 py-1 bg-white/20 rounded-full text-sm">
+                            {interest}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
 
-        {/* Action Buttons */}
-        <div className="flex items-center justify-center gap-6">
+              <div className="absolute top-4 right-4 flex gap-2">
+                {profilePhotos.length > 1 && profilePhotos.map((_: any, i: number) => (
+                  <button
+                    key={i}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentPhotoIndex(i);
+                    }}
+                    className={`w-2 h-2 rounded-full ${i === currentPhotoIndex ? 'bg-white' : 'bg-white/50'}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      <div className="p-6">
+        <div className="flex items-center justify-center gap-4">
           <button
             onClick={() => handleSwipe('pass')}
-            className="w-16 h-16 rounded-full bg-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:scale-95"
+            disabled={actionLoading}
+            className="w-14 h-14 rounded-full bg-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
           >
-            <X size={32} className="text-red-500" />
+            <X size={28} className="text-red-500" />
           </button>
+
+          <button
+            onClick={() => setShowInfo(!showInfo)}
+            className="w-12 h-12 rounded-full bg-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
+          >
+            <Info size={24} className="text-blue-500" />
+          </button>
+
           <button
             onClick={() => handleSwipe('superlike')}
-            className="w-14 h-14 rounded-full bg-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:scale-95"
+            disabled={actionLoading}
+            className="w-14 h-14 rounded-full bg-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
           >
-            <Star size={24} className="text-blue-500" fill="currentColor" />
+            <Star size={28} className="text-yellow-500" fill="currentColor" />
           </button>
+
           <button
             onClick={() => handleSwipe('like')}
-            className="w-16 h-16 rounded-full bg-white shadow-lg flex items-center justify-center hover:scale-110 transition-transform active:scale-95"
+            disabled={actionLoading}
+            className="w-14 h-14 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 shadow-lg flex items-center justify-center hover:scale-110 transition-transform"
           >
-            <Heart size={32} className="text-pink-500" fill="currentColor" />
+            <Heart size={28} className="text-white" fill="currentColor" />
           </button>
         </div>
       </div>

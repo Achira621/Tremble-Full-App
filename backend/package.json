@@ -2,7 +2,7 @@
   "name": "tremble-backend",
   "version": "1.0.0",
   "description": "High-performance backend for Tremble social photo discovery app",
-"main": "dist/src/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc",
@@ -39,6 +39,8 @@
     "multer-storage-cloudinary": "^4.0.0",
     "rate-limit-redis": "^4.2.0",
     "sharp": "^0.33.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "uuid": "^13.0.0",
     "winston": "^3.11.0"
   },

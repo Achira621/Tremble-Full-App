@@ -1,216 +1,259 @@
-import { useState } from 'react';
-import { Send, ArrowLeft, Heart } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect, useRef } from 'react';
+import { Send, ArrowLeft, Heart, Loader } from 'lucide-react';
+import { motion } from 'motion/react';
+import api, { UserProfile, Message } from '../../services/api';
+import socketService from '../../services/socket';
 
 interface Match {
   id: string;
-  name: string;
-  photo: string;
-  lastMessage: string;
-  timestamp: string;
-  unread: boolean;
-  online: boolean;
-}
-
-interface Message {
-  id: string;
-  senderId: string;
-  text: string;
-  timestamp: string;
-}
-
-interface Connection {
-  id: string;
-  name: string;
-  photo: string;
-  bio: string;
-  interests: string[];
-  messages: Message[];
+  user: UserProfile;
+  matchedAt: string;
+  lastMessage?: Message;
+  unread: number;
+  online?: boolean;
 }
 
 interface MessagesProps {
   currentUserId: string;
 }
 
-// Mock matches
-const mockMatches: Match[] = [
-  {
-    id: '1',
-    name: 'Alex',
-    photo: 'https://i.pravatar.cc/150?img=1',
-    lastMessage: 'Hey! How are you doing? 😊',
-    timestamp: '2m ago',
-    unread: true,
-    online: true
-  },
-  {
-    id: '2',
-    name: 'Jordan',
-    photo: 'https://i.pravatar.cc/150?img=2',
-    lastMessage: 'Would love to grab coffee sometime!',
-    timestamp: '1h ago',
-    unread: false,
-    online: false
-  },
-  {
-    id: '3',
-    name: 'Sam',
-    photo: 'https://i.pravatar.cc/150?img=3',
-    lastMessage: 'That sounds amazing! ✨',
-    timestamp: '3h ago',
-    unread: true,
-    online: true
-  },
-  {
-    id: '4',
-    name: 'Taylor',
-    photo: 'https://i.pravatar.cc/150?img=4',
-    lastMessage: 'I love that place too!',
-    timestamp: '1d ago',
-    unread: false,
-    online: false
-  }
-];
-
-// Mock connections with full message history
-const mockConnections: Connection[] = [
-  {
-    id: '1',
-    name: 'Alex',
-    photo: 'https://i.pravatar.cc/150?img=1',
-    bio: 'Coffee enthusiast ☕ | Adventure seeker 🏔️',
-    interests: ['Travel', 'Photography', 'Coffee'],
-    messages: [
-      { id: '1', senderId: '1', text: 'Hey! I saw you like photography too! 📸', timestamp: '10:30 AM' },
-      { id: '2', senderId: 'current', text: 'Yes! I love landscape photography', timestamp: '10:32 AM' },
-      { id: '3', senderId: '1', text: 'That\'s awesome! What\'s your favorite spot?', timestamp: '10:33 AM' },
-      { id: '4', senderId: 'current', text: 'Definitely the mountains. You?', timestamp: '10:35 AM' },
-      { id: '5', senderId: '1', text: 'Hey! How are you doing? 😊', timestamp: 'Just now' }
-    ]
-  },
-  {
-    id: '2',
-    name: 'Jordan',
-    photo: 'https://i.pravatar.cc/150?img=2',
-    bio: 'Artist 🎨 | Music lover 🎵',
-    interests: ['Art', 'Music', 'Fashion'],
-    messages: [
-      { id: '1', senderId: '2', text: 'Love your art! Where do you get inspiration?', timestamp: 'Yesterday' },
-      { id: '2', senderId: 'current', text: 'Thanks! Mostly from nature and emotions', timestamp: 'Yesterday' },
-      { id: '3', senderId: '2', text: 'Would love to grab coffee sometime!', timestamp: '1h ago' }
-    ]
-  }
-];
-
 export function Messages({ currentUserId }: MessagesProps) {
-  const [matches] = useState<Match[]>(mockMatches);
-  const [connections] = useState<Connection[]>(mockConnections);
+  const [matches, setMatches] = useState<Match[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<string | null>(null);
   const [messageText, setMessageText] = useState('');
-  const [messages, setMessages] = useState<Record<string, Message[]>>(
-    connections.reduce((acc, conn) => ({ ...acc, [conn.id]: conn.messages }), {})
-  );
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const currentConnection = connections.find(c => c.id === selectedMatch);
+  useEffect(() => {
+    loadMatches();
+    socketService.connect();
+    
+    socketService.on('newMessage', handleNewMessage);
+    socketService.on('userTyping', handleUserTyping);
+    socketService.on('userOnline', handleUserOnline);
+    socketService.on('userOffline', handleUserOffline);
 
-  const handleSendMessage = () => {
-    if (!messageText.trim() || !selectedMatch) return;
-
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      senderId: currentUserId,
-      text: messageText,
-      timestamp: 'Just now'
+    return () => {
+      socketService.off('newMessage', handleNewMessage);
+      socketService.off('userTyping', handleUserTyping);
+      socketService.off('userOnline', handleUserOnline);
+      socketService.off('userOffline', handleUserOffline);
     };
+  }, []);
 
+  useEffect(() => {
+    if (selectedMatch) {
+      loadMessages(selectedMatch);
+      socketService.joinConversation(selectedMatch);
+    }
+  }, [selectedMatch]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, selectedMatch]);
+
+  const loadMatches = async () => {
+    try {
+      const response = await api.matches.getMatches();
+      if (response.success && response.data) {
+        const formattedMatches: Match[] = response.data.map((m: any) => ({
+          id: m.matchId,
+          user: m.user,
+          matchedAt: m.matchedAt,
+          unread: 0,
+        }));
+        setMatches(formattedMatches);
+      }
+    } catch (error) {
+      console.error('Failed to load matches:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMessages = async (matchId: string) => {
+    try {
+      const match = matches.find(m => m.id === matchId);
+      if (!match) return;
+      
+      const userId = typeof match.user === 'string' ? match.user : match.user.id;
+      const response = await api.messages.getMessages(userId);
+      if (response.success && response.data) {
+        setMessages(prev => ({
+          ...prev,
+          [matchId]: response.data as Message[]
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+    }
+  };
+
+  const handleNewMessage = (message: any) => {
+    if (!selectedMatch) return;
     setMessages(prev => ({
       ...prev,
-      [selectedMatch]: [...(prev[selectedMatch] || []), newMessage]
+      [selectedMatch]: [...(prev[selectedMatch] || []), message]
     }));
-
-    setMessageText('');
   };
+
+  const handleUserTyping = (data: { userId: string; isTyping: boolean }) => {
+    setTypingUsers(prev => ({
+      ...prev,
+      [data.userId]: data.isTyping
+    }));
+  };
+
+  const handleUserOnline = (data: { userId: string }) => {
+    setMatches(prev => prev.map(m => 
+      m.user.id === data.userId ? { ...m, online: true } : m
+    ));
+  };
+
+  const handleUserOffline = (data: { userId: string }) => {
+    setMatches(prev => prev.map(m => 
+      m.user.id === data.userId ? { ...m, online: false } : m
+    ));
+  };
+
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || !selectedMatch) return;
+
+    const match = matches.find(m => m.id === selectedMatch);
+    if (!match) return;
+
+    const receiverId = typeof match.user === 'string' ? match.user : match.user.id;
+    
+    setSending(true);
+    try {
+      const optimisticMessage: Message = {
+        id: Date.now().toString(),
+        senderId: currentUserId,
+        receiverId,
+        content: messageText,
+        createdAt: new Date().toISOString(),
+        isRead: false,
+      };
+
+      setMessages(prev => ({
+        ...prev,
+        [selectedMatch]: [...(prev[selectedMatch] || []), optimisticMessage]
+      }));
+
+      socketService.sendMessage(selectedMatch, receiverId, messageText);
+      setMessageText('');
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleTyping = (isTyping: boolean) => {
+    if (selectedMatch) {
+      socketService.sendTyping(selectedMatch, isTyping);
+    }
+  };
+
+  const currentMatch = matches.find(m => m.id === selectedMatch);
+  const currentMessages = selectedMatch ? messages[selectedMatch] || [] : [];
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader className="animate-spin text-purple-600" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex bg-white">
-      {/* Matches List */}
       <div className={`${selectedMatch ? 'hidden md:block' : 'block'} w-full md:w-96 border-r border-gray-200 flex flex-col`}>
-        {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
             Messages
           </h1>
         </div>
 
-        {/* New Matches */}
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wide">New Matches</h2>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {matches.filter(m => m.unread).map((match) => (
+        {matches.filter(m => m.unread > 0).length > 0 && (
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wide">New Matches</h2>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {matches.filter(m => m.unread > 0).map((match) => (
+                <button
+                  key={match.id}
+                  onClick={() => setSelectedMatch(match.id)}
+                  className="flex-shrink-0 flex flex-col items-center gap-2"
+                >
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 p-0.5">
+                      <img
+                        src={(match.user as any).avatar || (match.user as any).photos?.[0]?.url || `https://i.pravatar.cc/150?u=${match.user.id}`}
+                        alt={(match.user as any).username || (match.user as any).name}
+                        className="w-full h-full rounded-full object-cover border-2 border-white"
+                      />
+                    </div>
+                    {match.online && (
+                      <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-600 max-w-[64px] truncate">{(match.user as any).username || (match.user as any).name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto">
+          {matches.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              <p>No matches yet</p>
+              <p className="text-sm mt-2">Start swiping to find your match!</p>
+            </div>
+          ) : (
+            matches.map((match) => (
               <button
                 key={match.id}
                 onClick={() => setSelectedMatch(match.id)}
-                className="flex-shrink-0 flex flex-col items-center gap-2"
+                className={`w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors border-b border-gray-100 ${
+                  selectedMatch === match.id ? 'bg-purple-50' : ''
+                }`}
               >
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 p-0.5">
-                    <img
-                      src={match.photo}
-                      alt={match.name}
-                      className="w-full h-full rounded-full object-cover border-2 border-white"
-                    />
-                  </div>
+                <div className="relative flex-shrink-0">
+                  <img
+                    src={(match.user as any).avatar || (match.user as any).photos?.[0]?.url || `https://i.pravatar.cc/150?u=${match.user.id}`}
+                    alt={(match.user as any).username || (match.user as any).name}
+                    className="w-14 h-14 rounded-full object-cover"
+                  />
                   {match.online && (
-                    <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white" />
+                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white" />
                   )}
                 </div>
-                <span className="text-xs text-gray-600 max-w-[64px] truncate">{match.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Messages List */}
-        <div className="flex-1 overflow-y-auto">
-          {matches.map((match) => (
-            <button
-              key={match.id}
-              onClick={() => setSelectedMatch(match.id)}
-              className={`w-full p-4 flex items-center gap-3 hover:bg-gray-50 transition-colors border-b border-gray-100 ${
-                selectedMatch === match.id ? 'bg-purple-50' : ''
-              }`}
-            >
-              <div className="relative flex-shrink-0">
-                <img
-                  src={match.photo}
-                  alt={match.name}
-                  className="w-14 h-14 rounded-full object-cover"
-                />
-                {match.online && (
-                  <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white" />
-                )}
-              </div>
-              <div className="flex-1 text-left">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-gray-900">{match.name}</h3>
-                  <span className="text-xs text-gray-500">{match.timestamp}</span>
+                <div className="flex-1 text-left">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="font-semibold text-gray-900">{(match.user as any).username || (match.user as any).name}</h3>
+                    <span className="text-xs text-gray-500">
+                      {match.lastMessage ? new Date(match.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
+                  </div>
+                  <p className={`text-sm truncate ${match.unread > 0 ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
+                    {match.lastMessage?.content || 'Start a conversation!'}
+                  </p>
                 </div>
-                <p className={`text-sm truncate ${match.unread ? 'text-gray-900 font-medium' : 'text-gray-600'}`}>
-                  {match.lastMessage}
-                </p>
-              </div>
-              {match.unread && (
-                <div className="w-2 h-2 rounded-full bg-purple-600 flex-shrink-0" />
-              )}
-            </button>
-          ))}
+                {match.unread > 0 && (
+                  <div className="w-2 h-2 rounded-full bg-purple-600 flex-shrink-0" />
+                )}
+              </button>
+            ))
+          )}
         </div>
       </div>
 
-      {/* Chat View */}
-      {selectedMatch ? (
+      {selectedMatch && currentMatch ? (
         <div className="flex-1 flex flex-col">
-          {/* Chat Header */}
           <div className="p-4 border-b border-gray-200 flex items-center gap-3 bg-white">
             <button
               onClick={() => setSelectedMatch(null)}
@@ -219,54 +262,23 @@ export function Messages({ currentUserId }: MessagesProps) {
               <ArrowLeft size={20} />
             </button>
             <img
-              src={currentConnection?.photo}
-              alt={currentConnection?.name}
+              src={(currentMatch.user as any).avatar || (currentMatch.user as any).photos?.[0]?.url || `https://i.pravatar.cc/150?u=${currentMatch.user.id}`}
+              alt={(currentMatch.user as any).username || (currentMatch.user as any).name}
               className="w-12 h-12 rounded-full object-cover"
             />
             <div className="flex-1">
-              <h2 className="font-semibold text-gray-900">{currentConnection?.name}</h2>
-              <p className="text-sm text-gray-500">Active now</p>
+              <h2 className="font-semibold text-gray-900">{(currentMatch.user as any).username || (currentMatch.user as any).name}</h2>
+              <p className="text-sm text-gray-500">{currentMatch.online ? 'Active now' : 'Offline'}</p>
             </div>
             <button className="w-10 h-10 rounded-full hover:bg-gray-100 flex items-center justify-center">
               <Heart size={20} className="text-pink-500" />
             </button>
           </div>
 
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-br from-pink-50/30 via-purple-50/30 to-blue-50/30">
-            {/* Match Notification */}
-            <div className="flex flex-col items-center justify-center text-center space-y-3 py-8">
-              <div className="flex items-center gap-2">
-                <img
-                  src={currentConnection?.photo}
-                  alt={currentConnection?.name}
-                  className="w-16 h-16 rounded-full object-cover"
-                />
-                <Heart size={24} className="text-pink-500 fill-pink-500" />
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center text-white text-2xl font-bold">
-                  You
-                </div>
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900">You matched with {currentConnection?.name}!</h3>
-                <p className="text-sm text-gray-600 mt-1">{currentConnection?.bio}</p>
-                <div className="flex flex-wrap gap-2 justify-center mt-3">
-                  {currentConnection?.interests.map((interest) => (
-                    <span
-                      key={interest}
-                      className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-xs"
-                    >
-                      {interest}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Messages */}
-            {messages[selectedMatch]?.map((message) => (
+            {currentMessages.map((message) => (
               <motion.div
-                key={message.id}
+                key={message.id || message._id || Date.now()}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`flex ${message.senderId === currentUserId ? 'justify-end' : 'justify-start'}`}
@@ -278,36 +290,42 @@ export function Messages({ currentUserId }: MessagesProps) {
                       : 'bg-white text-gray-900 shadow-sm'
                   }`}
                 >
-                  <p className="text-sm">{message.text}</p>
-                  <span
-                    className={`text-xs mt-1 block ${
-                      message.senderId === currentUserId ? 'text-white/70' : 'text-gray-500'
-                    }`}
-                  >
-                    {message.timestamp}
+                  <p className="text-sm">{message.content}</p>
+                  <span className={`text-xs mt-1 block ${message.senderId === currentUserId ? 'text-white/70' : 'text-gray-500'}`}>
+                    {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
               </motion.div>
             ))}
+            {typingUsers[currentMatch.user.id as string] && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 px-4 py-2 rounded-2xl">
+                  <span className="text-sm text-gray-500">typing...</span>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Message Input */}
           <div className="p-4 border-t border-gray-200 bg-white">
             <div className="flex items-center gap-3">
               <input
                 type="text"
                 value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
+                onChange={(e) => {
+                  setMessageText(e.target.value);
+                  handleTyping(e.target.value.length > 0);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
                 placeholder="Type a message..."
                 className="flex-1 px-4 py-3 rounded-full bg-gray-100 focus:bg-gray-200 focus:outline-none transition-colors"
               />
               <button
                 onClick={handleSendMessage}
-                disabled={!messageText.trim()}
+                disabled={!messageText.trim() || sending}
                 className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white flex items-center justify-center hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Send size={20} />
+                {sending ? <Loader className="animate-spin" size={20} /> : <Send size={20} />}
               </button>
             </div>
           </div>

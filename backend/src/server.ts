@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import app from './app';
 import connectDB from './config/database';
 import { logger } from './utils/logger';
+import { socketManager } from './socket/socketManager';
 
 // Load environment variables
 dotenv.config();
@@ -19,6 +20,10 @@ const startServer = async () => {
             logger.info(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
             logger.info(`Health check: http://localhost:${PORT}/health`);
         });
+
+        // Initialize Socket.io
+        socketManager.initialize(server);
+        logger.info('Real-time features enabled');
 
         // Graceful shutdown
         process.on('SIGTERM', () => {

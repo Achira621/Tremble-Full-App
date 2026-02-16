@@ -52,13 +52,16 @@ export interface Match {
 }
 
 export interface Message {
-    id: string;
-    conversationId: string;
+    id?: string;
+    _id?: string;
+    conversationId?: string;
+    conversation?: string;
     senderId: string;
     receiverId: string;
     content: string;
     isRead: boolean;
     createdAt: string;
+    updatedAt?: string;
 }
 
 export interface Conversation {
@@ -433,6 +436,31 @@ class TrembleAPI {
             return this.request(`/api/connections/${matchId}`, {
                 method: 'DELETE',
             });
+        },
+    };
+
+    // Matches (Tinder-style matching)
+    matches = {
+        like: async (userId: string): Promise<ApiResponse<{ matched: boolean; match?: any }>> => {
+            return this.request(`/api/matches/like/${userId}`, {
+                method: 'POST',
+            });
+        },
+
+        pass: async (userId: string): Promise<ApiResponse> => {
+            return this.request(`/api/matches/pass/${userId}`, {
+                method: 'POST',
+            });
+        },
+
+        unlike: async (userId: string): Promise<ApiResponse> => {
+            return this.request(`/api/matches/unlike/${userId}`, {
+                method: 'DELETE',
+            });
+        },
+
+        getMatches: async (): Promise<ApiResponse<Array<{ matchId: string; user: UserProfile; matchedAt: string }>>> => {
+            return this.request('/api/matches/matches');
         },
     };
 
