@@ -87,6 +87,12 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
                     username: user.username,
                     email: user.email,
                     fullName: user.fullName,
+                    name: user.fullName,
+                    age: user.age,
+                    bio: user.bio,
+                    photos: user.photos || [],
+                    interests: user.interests || [],
+                    vibeBadges: user.badges?.map(b => b.name) || [],
                 },
                 token,
             },
@@ -202,7 +208,18 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
 
         res.status(200).json({
             success: true,
-            data: user,
+            data: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                fullName: user.fullName,
+                name: user.fullName,
+                age: user.age,
+                bio: user.bio,
+                photos: user.photos,
+                interests: user.interests,
+                vibeBadges: user.badges?.map(b => b.name) || [],
+            },
         });
     } catch (error: any) {
         logger.error('Get me error:', error);

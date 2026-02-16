@@ -1,7 +1,9 @@
 // API Configuration
-// TEMPORARY: Set to true to fallback to localStorage if backend API fails
-const ENABLE_FALLBACK = true;
-export const API_BASE_URL = 'https://tremble-full-app-85d9.vercel.app';
+// Set to false to use ONLY real backend (no localStorage fallback)
+const ENABLE_FALLBACK = false;
+
+// Use localhost for development
+export const API_BASE_URL = 'http://localhost:3000';
 
 // Types
 export interface ApiResponse<T = any> {
