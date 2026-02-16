@@ -1,5 +1,5 @@
 // API Configuration
-export const API_BASE_URL = 'https://tremble-full-app-85d9.vercel.app/api';
+export const API_BASE_URL = 'https://tremble-full-app-85d9.vercel.app';
 
 // Types
 export interface ApiResponse<T = any> {

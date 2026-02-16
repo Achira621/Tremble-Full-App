@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Camera, ArrowRight, X, Loader } from 'lucide-react';
-import api, { TokenManager } from '../../services/api';
+import api, { API_BASE_URL, TokenManager } from '../../services/api';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfile) => void;
@@ -51,7 +51,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       formData.append('photo', file);
 
       // Upload to backend (which uploads to Cloudinary)
-      const response = await fetch('/api/users/upload-photo', {
+      const response = await fetch(`${API_BASE_URL}/api/users/upload-photo`, {
         method: 'POST',
         body: formData,
       });
