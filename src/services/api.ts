@@ -1,4 +1,6 @@
 // API Configuration
+// TEMPORARY: Set to true to bypass backend and use mock auth (for testing)
+const MOCK_MODE = true;
 export const API_BASE_URL = 'https://tremble-full-app-85d9.vercel.app';
 
 // Types
@@ -132,6 +134,32 @@ class TrembleAPI {
             name: string;
             age: number;
         }): Promise<ApiResponse<AuthResponse>> => {
+            if (MOCK_MODE) {
+                // Mock registration - store user in localStorage
+                const mockUser: UserProfile = {
+                    id: 'mock_' + Date.now(),
+                    name: data.name,
+                    age: data.age,
+                    bio: '',
+                    photos: [],
+                    interests: [],
+                    vibeBadges: [],
+                };
+                const mockToken = 'mock_token_' + Date.now();
+
+                localStorage.setItem('mock_user', JSON.stringify(mockUser));
+                localStorage.setItem('mock_credentials', JSON.stringify({ email: data.email, password: data.password }));
+                TokenManager.setToken(mockToken);
+
+                return {
+                    success: true,
+                    data: {
+                        user: mockUser,
+                        token: mockToken,
+                    },
+                };
+            }
+
             const response = await this.request<AuthResponse>('/api/auth/register', {
                 method: 'POST',
                 body: JSON.stringify(data),
@@ -145,6 +173,34 @@ class TrembleAPI {
         },
 
         login: async (email: string, password: string): Promise<ApiResponse<AuthResponse>> => {
+            if (MOCK_MODE) {
+                // Mock login - check against stored credentials
+                const storedCreds = localStorage.getItem('mock_credentials');
+                const storedUser = localStorage.getItem('mock_user');
+
+                if (storedCreds && storedUser) {
+                    const creds = JSON.parse(storedCreds);
+                    if (creds.email === email && creds.password === password) {
+                        const user: UserProfile = JSON.parse(storedUser);
+                        const mockToken = 'mock_token_' + Date.now();
+                        TokenManager.setToken(mockToken);
+
+                        return {
+                            success: true,
+                            data: {
+                                user,
+                                token: mockToken,
+                            },
+                        };
+                    }
+                }
+
+                return {
+                    success: false,
+                    error: 'Invalid credentials',
+                };
+            }
+
             const response = await this.request<AuthResponse>('/api/auth/login', {
                 method: 'POST',
                 body: JSON.stringify({ email, password }),
@@ -163,6 +219,21 @@ class TrembleAPI {
         },
 
         getCurrentUser: async (): Promise<ApiResponse<UserProfile>> => {
+            if (MOCK_MODE) {
+                // Mock get current user
+                const storedUser = localStorage.getItem('mock_user');
+                if (storedUser) {
+                    return {
+                        success: true,
+                        data: JSON.parse(storedUser),
+                    };
+                }
+                return {
+                    success: false,
+                    error: 'No user found',
+                };
+            }
+
             return this.request<UserProfile>('/api/auth/me');
         },
     };
@@ -174,6 +245,24 @@ class TrembleAPI {
         },
 
         updateProfile: async (data: Partial<UserProfile>): Promise<ApiResponse<UserProfile>> => {
+            if (MOCK_MODE) {
+                // Mock update profile - update stored user
+                const storedUser = localStorage.getItem('mock_user');
+                if (storedUser) {
+                    const user: UserProfile = JSON.parse(storedUser);
+                    const updatedUser = { ...user, ...data };
+                    localStorage.setItem('mock_user', JSON.stringify(updatedUser));
+                    return {
+                        success: true,
+                        data: updatedUser,
+                    };
+                }
+                return {
+                    success: false,
+                    error: 'No user found',
+                };
+            }
+
             return this.request<UserProfile>('/api/users/profile', {
                 method: 'PUT',
                 body: JSON.stringify(data),
