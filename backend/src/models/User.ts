@@ -7,6 +7,13 @@ export interface IUserDocument extends Document {
     password: string;
     fullName: string;
     bio?: string;
+    age?: number;
+    interests?: string[];
+    photos?: {
+        url: string;
+        order: number;
+        uploadedAt: Date;
+    }[];
     profilePhoto?: string;
     followers: mongoose.Types.ObjectId[];
     following: mongoose.Types.ObjectId[];
@@ -145,7 +152,7 @@ userSchema.index({ followersCount: -1 }); // For popular users
 userSchema.index({ username: 'text', fullName: 'text' }); // For search
 
 // Hash password before saving
-userSchema.pre('save', async function (next) {
+userSchema.pre('save', async function (this: IUserDocument, next) {
     if (!this.isModified('password')) return next();
 
     try {
