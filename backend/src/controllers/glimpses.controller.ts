@@ -1,4 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from '../types';
 import Glimpse from '../models/Glimpse';
 import { GlimpseInteraction, GlimpseComment } from '../models/GlimpseInteraction';
 import User from '../models/User';
@@ -9,7 +10,7 @@ import mongoose from 'mongoose';
 // ==========================================
 // Create Glimpse
 // ==========================================
-export const createGlimpse = async (req: Request, res: Response, next: NextFunction) => {
+export const createGlimpse = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { caption, mood, location, musicTrack, tags } = req.body;
         const userId = req.user.id;
@@ -47,7 +48,7 @@ export const createGlimpse = async (req: Request, res: Response, next: NextFunct
 // ==========================================
 // Get Feed (The Algorithm)
 // ==========================================
-export const getFeed = async (req: Request, res: Response, next: NextFunction) => {
+export const getFeed = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
         const limit = parseInt(req.query.limit as string) || 10;
@@ -132,7 +133,7 @@ export const getFeed = async (req: Request, res: Response, next: NextFunction) =
 // ==========================================
 // Interactions
 // ==========================================
-export const recordView = async (req: Request, res: Response, next: NextFunction) => {
+export const recordView = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -150,7 +151,7 @@ export const recordView = async (req: Request, res: Response, next: NextFunction
     }
 };
 
-export const likeGlimpse = async (req: Request, res: Response, next: NextFunction) => {
+export const likeGlimpse = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -189,7 +190,7 @@ export const likeGlimpse = async (req: Request, res: Response, next: NextFunctio
     }
 };
 
-export const trembleGlimpse = async (req: Request, res: Response, next: NextFunction) => {
+export const trembleGlimpse = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -218,7 +219,7 @@ export const trembleGlimpse = async (req: Request, res: Response, next: NextFunc
     }
 };
 
-export const commentGlimpse = async (req: Request, res: Response, next: NextFunction) => {
+export const commentGlimpse = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
         const { content } = req.body;
@@ -241,7 +242,7 @@ export const commentGlimpse = async (req: Request, res: Response, next: NextFunc
 // ==========================================
 // Get User Glimpses
 // ==========================================
-export const getMyGlimpses = async (req: Request, res: Response, next: NextFunction) => {
+export const getMyGlimpses = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
         const glimpses = await Glimpse.find({ user: userId }).sort({ createdAt: -1 });

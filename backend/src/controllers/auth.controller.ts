@@ -18,7 +18,13 @@ export const signupValidation = [
     body('password')
         .isLength({ min: 6 })
         .withMessage('Password must be at least 6 characters'),
+    body('name')
+        .optional({ nullable: true, checkFalsy: true })
+        .trim()
+        .isLength({ min: 1, max: 50 })
+        .withMessage('Name is required'),
     body('fullName')
+        .optional({ nullable: true, checkFalsy: true })
         .trim()
         .isLength({ min: 1, max: 50 })
         .withMessage('Full name is required'),
@@ -43,7 +49,8 @@ const generateToken = (id: string, username: string, email: string): string => {
 // @access  Public
 export const signup = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { username, email, password, fullName } = req.body;
+        const { username, email, password, fullName, name } = req.body;
+        const userFullName = fullName || name;
 
         // Check if user exists
         const existingUser = await User.findOne({
@@ -63,7 +70,7 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
             username,
             email,
             password,
-            fullName,
+            fullName: userFullName,
         });
 
         // Generate token

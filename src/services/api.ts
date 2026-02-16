@@ -107,15 +107,34 @@ class TrembleAPI {
         options: RequestInit = {}
     ): Promise<ApiResponse<T>> {
         try {
+            const isFormData = options.body instanceof FormData;
+            
+            const getHeaders = () => {
+                const authHeaders = TokenManager.getAuthHeaders();
+                if (isFormData) {
+                    const { 'Content-Type': _, ...rest } = authHeaders;
+                    return rest;
+                }
+                return authHeaders;
+            };
+                
             const response = await fetch(`${this.baseUrl}${endpoint}`, {
                 ...options,
                 headers: {
-                    ...TokenManager.getAuthHeaders(),
+                    ...getHeaders(),
                     ...options.headers,
                 },
             });
 
             const data = await response.json();
+            
+            if (!response.ok) {
+                return {
+                    success: false,
+                    error: data.error || `HTTP error ${response.status}`,
+                };
+            }
+            
             return data;
         } catch (error: any) {
             return {
@@ -330,10 +349,12 @@ class TrembleAPI {
             };
         },
 
-        uploadPhoto: async (photoUrl: string): Promise<ApiResponse<UserProfile>> => {
-            return this.request<UserProfile>('/api/users/photos', {
+        uploadPhoto: async (photo: File): Promise<ApiResponse<{ url: string }>> => {
+            const formData = new FormData();
+            formData.append('photo', photo);
+            return this.request<{ url: string }>('/api/users/upload-photo', {
                 method: 'POST',
-                body: JSON.stringify({ photoUrl }),
+                body: formData,
             });
         },
 

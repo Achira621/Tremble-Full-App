@@ -10,6 +10,6 @@ router.get('/search', searchUsers);
 router.get('/:username', getUserProfile);
 router.put('/profile', protect, validate(updateProfileValidation), updateProfile);
 router.post('/vibe', protect, addVibe);
-router.post('/upload-photo', upload.single('photo'), uploadPhoto);
+router.post('/upload-photo', protect, upload.single('photo'), uploadPhoto);
 
 export default router;

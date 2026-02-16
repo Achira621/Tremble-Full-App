@@ -1,11 +1,12 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from '../types';
 import { DailyStreak, Achievement, Notification } from '../models/Engagement';
 import { AppError } from '../middleware/error.middleware';
 
 // ==========================================
 // Streaks
 // ==========================================
-export const getDailyStreak = async (req: Request, res: Response, next: NextFunction) => {
+export const getDailyStreak = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
         let streak = await DailyStreak.findOne({ user: userId });
@@ -43,7 +44,7 @@ export const getDailyStreak = async (req: Request, res: Response, next: NextFunc
     }
 };
 
-export const claimStreakReward = async (req: Request, res: Response, next: NextFunction) => {
+export const claimStreakReward = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         // Mock implementation for reward claiming
         res.status(200).json({
@@ -58,7 +59,7 @@ export const claimStreakReward = async (req: Request, res: Response, next: NextF
 // ==========================================
 // Achievements
 // ==========================================
-export const getAchievements = async (req: Request, res: Response, next: NextFunction) => {
+export const getAchievements = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
         const achievements = await Achievement.find({ user: userId });
@@ -74,7 +75,7 @@ export const getAchievements = async (req: Request, res: Response, next: NextFun
 // ==========================================
 // Notifications
 // ==========================================
-export const getNotifications = async (req: Request, res: Response, next: NextFunction) => {
+export const getNotifications = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
         const notifications = await Notification.find({ recipient: userId })
@@ -90,7 +91,7 @@ export const getNotifications = async (req: Request, res: Response, next: NextFu
     }
 };
 
-export const markNotificationRead = async (req: Request, res: Response, next: NextFunction) => {
+export const markNotificationRead = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
@@ -109,7 +110,7 @@ export const markNotificationRead = async (req: Request, res: Response, next: Ne
 // ==========================================
 // Secret Admirers & Mystery Boxes (Mock Mongoose)
 // ==========================================
-export const getSecretAdmirers = async (req: Request, res: Response, next: NextFunction) => {
+export const getSecretAdmirers = async (req: AuthRequest, res: Response, next: NextFunction) => {
     // Need a Like model to count hidden likes
     // For now, return mock count or 0
     res.status(200).json({
@@ -118,28 +119,28 @@ export const getSecretAdmirers = async (req: Request, res: Response, next: NextF
     });
 };
 
-export const revealSecretAdmirer = async (req: Request, res: Response, next: NextFunction) => {
+export const revealSecretAdmirer = async (req: AuthRequest, res: Response, next: NextFunction) => {
     res.status(200).json({
         success: true,
         data: { name: 'Sarah', age: 24 } // Mock
     });
 };
 
-export const getMysteryBoxes = async (req: Request, res: Response, next: NextFunction) => {
+export const getMysteryBoxes = async (req: AuthRequest, res: Response, next: NextFunction) => {
     res.status(200).json({
         success: true,
         data: []
     });
 };
 
-export const openMysteryBox = async (req: Request, res: Response, next: NextFunction) => {
+export const openMysteryBox = async (req: AuthRequest, res: Response, next: NextFunction) => {
     res.status(200).json({
         success: true,
         data: { reward: '100 Coins' }
     });
 };
 
-export const getStats = async (req: Request, res: Response, next: NextFunction) => {
+export const getStats = async (req: AuthRequest, res: Response, next: NextFunction) => {
     res.status(200).json({
         success: true,
         data: { score: 85 }
