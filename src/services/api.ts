@@ -2,6 +2,9 @@
 // Use relative URL for production (works on same domain)
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
+// Debug logging
+console.log('API_BASE_URL:', API_BASE_URL);
+
 // Types
 export interface ApiResponse<T = any> {
     success: boolean;
@@ -108,6 +111,9 @@ class TrembleAPI {
         endpoint: string,
         options: RequestInit = {}
     ): Promise<ApiResponse<T>> {
+        const url = `${this.baseUrl}${endpoint}`;
+        console.log('API Request:', options.method || 'GET', url);
+        
         try {
             const isFormData = options.body instanceof FormData;
             
@@ -120,13 +126,15 @@ class TrembleAPI {
                 return authHeaders;
             };
                 
-            const response = await fetch(`${this.baseUrl}${endpoint}`, {
+            const response = await fetch(url, {
                 ...options,
                 headers: {
                     ...getHeaders(),
                     ...options.headers,
                 },
             });
+
+            console.log('API Response status:', response.status);
 
             const data = await response.json();
             
@@ -139,9 +147,10 @@ class TrembleAPI {
             
             return data;
         } catch (error: any) {
+            console.error('API Error:', error.message);
             return {
                 success: false,
-                error: error.message || 'Network error',
+                error: error.message || 'Network error - check if API server is running',
             };
         }
     }

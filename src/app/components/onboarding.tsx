@@ -94,6 +94,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
         age: profile.age,
       });
 
+      console.log('Registration response:', response);
+
       if (response.success && response.data) {
         // Use data directly from register response - NO extra API calls!
         const userData = {
@@ -110,9 +112,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       } else {
         alert(response.error || 'Registration failed. Please try again.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Registration error:', error);
-      alert('Registration failed. Please try again.');
+      alert(error?.message || 'Registration failed. Please try again.');
     } finally {
       setRegistering(false);
     }
