@@ -24,8 +24,11 @@
             "dest": "/backend/api/index.ts"
         },
         {
+            "handle": "filesystem"
+        },
+        {
             "src": "/(.*)",
-            "dest": "/$1"
+            "dest": "/index.html"
         }
     ],
     "env": {

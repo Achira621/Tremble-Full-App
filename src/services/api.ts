@@ -1,9 +1,18 @@
 // API Configuration
-// Use relative URL for production (works on same domain)
-export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+// Use relative URL - for Vercel production use '/api', for local dev use 'http://localhost:3000'
+const getApiUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  // If explicitly set to empty string or not set, use relative /api
+  if (!envUrl || envUrl === '') {
+    return '';
+  }
+  return envUrl;
+};
+
+export const API_BASE_URL = getApiUrl();
 
 // Debug logging
-console.log('API_BASE_URL:', API_BASE_URL);
+console.log('API_BASE_URL:', JSON.stringify(API_BASE_URL));
 
 // Types
 export interface ApiResponse<T = any> {
@@ -107,11 +116,21 @@ class TrembleAPI {
         this.baseUrl = baseUrl;
     }
 
+    private getUrl(endpoint: string): string {
+        // If baseUrl is empty, use relative URL
+        if (!this.baseUrl) {
+            return endpoint;
+        }
+        // Remove trailing slash from baseUrl if present
+        const cleanBaseUrl = this.baseUrl.replace(/\/$/, '');
+        return `${cleanBaseUrl}${endpoint}`;
+    }
+
     private async request<T>(
         endpoint: string,
         options: RequestInit = {}
     ): Promise<ApiResponse<T>> {
-        const url = `${this.baseUrl}${endpoint}`;
+        const url = this.getUrl(endpoint);
         console.log('API Request:', options.method || 'GET', url);
         
         try {
