@@ -1,7 +1,4 @@
 // API Configuration
-// Set to false to use ONLY real backend (no localStorage fallback)
-const ENABLE_FALLBACK = false;
-
 // Use localhost for development
 export const API_BASE_URL = 'http://localhost:3000';
 
@@ -79,15 +76,15 @@ export interface Conversation {
 // Token Management
 export const TokenManager = {
     getToken: (): string | null => {
-        return localStorage.getItem('tremble_token');
+        return sessionStorage.getItem('tremble_token');
     },
 
     setToken: (token: string): void => {
-        localStorage.setItem('tremble_token', token);
+        sessionStorage.setItem('tremble_token', token);
     },
 
     removeToken: (): void => {
-        localStorage.removeItem('tremble_token');
+        sessionStorage.removeItem('tremble_token');
     },
 
     getAuthHeaders: (): HeadersInit => {
@@ -158,109 +155,23 @@ class TrembleAPI {
             name: string;
             age: number;
         }): Promise<ApiResponse<AuthResponse>> => {
-            // Try real API first
-            try {
-                const response = await this.request<AuthResponse>('/api/auth/register', {
-                    method: 'POST',
-                    body: JSON.stringify(data),
-                });
-
-                if (response.success && response.data?.token) {
-                    TokenManager.setToken(response.data.token);
-                    return response;
-                }
-
-                // API returned error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return response;
-                }
-            } catch (error) {
-                // Network error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return {
-                        success: false,
-                        error: 'Network error',
-                    };
-                }
-            }
-
-            // Fallback to localStorage
-            const mockUser: UserProfile = {
-                id: 'mock_' + Date.now(),
-                name: data.name,
-                age: data.age,
-                bio: '',
-                photos: [],
-                interests: [],
-                vibeBadges: [],
-            };
-            const mockToken = 'mock_token_' + Date.now();
-
-            localStorage.setItem('mock_user', JSON.stringify(mockUser));
-            localStorage.setItem('mock_credentials', JSON.stringify({ email: data.email, password: data.password }));
-            TokenManager.setToken(mockToken);
-
-            return {
-                success: true,
-                data: {
-                    user: mockUser,
-                    token: mockToken,
-                },
-            };
+            return this.request<AuthResponse>('/api/auth/signup', {
+                method: 'POST',
+                body: JSON.stringify(data),
+            });
         },
 
         login: async (email: string, password: string): Promise<ApiResponse<AuthResponse>> => {
-            // Try real API first
-            try {
-                const response = await this.request<AuthResponse>('/api/auth/login', {
-                    method: 'POST',
-                    body: JSON.stringify({ email, password }),
-                });
+            const response = await this.request<AuthResponse>('/api/auth/login', {
+                method: 'POST',
+                body: JSON.stringify({ email, password }),
+            });
 
-                if (response.success && response.data?.token) {
-                    TokenManager.setToken(response.data.token);
-                    return response;
-                }
-
-                // API returned error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return response;
-                }
-            } catch (error) {
-                // Network error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return {
-                        success: false,
-                        error: 'Network error',
-                    };
-                }
+            if (response.success && response.data?.token) {
+                TokenManager.setToken(response.data.token);
             }
 
-            // Fallback to localStorage
-            const storedCreds = localStorage.getItem('mock_credentials');
-            const storedUser = localStorage.getItem('mock_user');
-
-            if (storedCreds && storedUser) {
-                const creds = JSON.parse(storedCreds);
-                if (creds.email === email && creds.password === password) {
-                    const user: UserProfile = JSON.parse(storedUser);
-                    const mockToken = 'mock_token_' + Date.now();
-                    TokenManager.setToken(mockToken);
-
-                    return {
-                        success: true,
-                        data: {
-                            user,
-                            token: mockToken,
-                        },
-                    };
-                }
-            }
-
-            return {
-                success: false,
-                error: 'Invalid credentials',
-            };
+            return response;
         },
 
         logout: async (): Promise<ApiResponse> => {
@@ -269,39 +180,7 @@ class TrembleAPI {
         },
 
         getCurrentUser: async (): Promise<ApiResponse<UserProfile>> => {
-            // Try real API first
-            try {
-                const response = await this.request<UserProfile>('/api/auth/me');
-                if (response.success) {
-                    return response;
-                }
-
-                // API returned error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return response;
-                }
-            } catch (error) {
-                // Network error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return {
-                        success: false,
-                        error: 'Network error',
-                    };
-                }
-            }
-
-            // Fallback to localStorage
-            const storedUser = localStorage.getItem('mock_user');
-            if (storedUser) {
-                return {
-                    success: true,
-                    data: JSON.parse(storedUser),
-                };
-            }
-            return {
-                success: false,
-                error: 'No user found',
-            };
+            return this.request<UserProfile>('/api/auth/me');
         },
     };
 
@@ -312,46 +191,10 @@ class TrembleAPI {
         },
 
         updateProfile: async (data: Partial<UserProfile>): Promise<ApiResponse<UserProfile>> => {
-            // Try real API first
-            try {
-                const response = await this.request<UserProfile>('/api/users/profile', {
-                    method: 'PUT',
-                    body: JSON.stringify(data),
-                });
-
-                if (response.success) {
-                    return response;
-                }
-
-                // API returned error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return response;
-                }
-            } catch (error) {
-                // Network error, fallback if enabled
-                if (!ENABLE_FALLBACK) {
-                    return {
-                        success: false,
-                        error: 'Network error',
-                    };
-                }
-            }
-
-            // Fallback to localStorage
-            const storedUser = localStorage.getItem('mock_user');
-            if (storedUser) {
-                const user: UserProfile = JSON.parse(storedUser);
-                const updatedUser = { ...user, ...data };
-                localStorage.setItem('mock_user', JSON.stringify(updatedUser));
-                return {
-                    success: true,
-                    data: updatedUser,
-                };
-            }
-            return {
-                success: false,
-                error: 'No user found',
-            };
+            return this.request<UserProfile>('/api/users/profile', {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            });
         },
 
         uploadPhoto: async (photo: File): Promise<ApiResponse<{ url: string }>> => {
