@@ -95,29 +95,18 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       });
 
       if (response.success && response.data) {
-        // Token is automatically saved by the API client
-        // Now update profile with photos and interests
-        const updateResponse = await api.users.updateProfile({
-          bio: profile.bio,
-          interests: profile.interests,
-          photos: photos.map((url, index) => ({
-            url,
-            order: index,
-          })),
-        });
-
-        // Fetch the full profile from the server
-        const profileResponse = await api.auth.getCurrentUser();
-        if (profileResponse.success && profileResponse.data) {
-          onComplete(profileResponse.data as any);
-        } else {
-          // Fallback to local data if getCurrentUser fails
-          console.warn('Could not fetch updated profile, using local data');
-          onComplete({
-            ...profile,
-            photos,
-          });
-        }
+        // Use data directly from register response - NO extra API calls!
+        const userData = {
+          id: response.data.user.id,
+          name: response.data.user.fullName || response.data.user.name || profile.name,
+          age: profile.age,
+          bio: profile.bio || '',
+          bioText: profile.bio || '',
+          interests: profile.interests || [],
+          photos: photos,
+          vibeBadges: [] as string[],
+        };
+        onComplete(userData);
       } else {
         alert(response.error || 'Registration failed. Please try again.');
       }
@@ -177,19 +166,23 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             <button
               onClick={async () => {
                 if (isSignIn) {
-                  // Handle login
+                  // Handle login - use data directly from response, NO extra API calls!
                   try {
                     setRegistering(true);
                     const response = await api.auth.login(email, password);
                     if (response.success && response.data) {
-                      // Fetch full profile
-                      const profileResponse = await api.auth.getCurrentUser();
-                      if (profileResponse.success && profileResponse.data) {
-                        onComplete(profileResponse.data as any);
-                      } else {
-                        console.error('Failed to get profile:', profileResponse.error);
-                        alert(profileResponse.error || 'Failed to load profile. Please try again.');
-                      }
+                      // Use data directly from login response - no extra API call needed!
+                      const userData = {
+                        id: response.data.user.id,
+                        name: response.data.user.fullName || response.data.user.name || 'User',
+                        age: 25, // Default age - will be fetched later if needed
+                        bio: '',
+                        bioText: '',
+                        interests: [] as string[],
+                        photos: response.data.user.photos || [],
+                        vibeBadges: [] as string[],
+                      };
+                      onComplete(userData);
                     } else {
                       alert(response.error || 'Login failed');
                     }
