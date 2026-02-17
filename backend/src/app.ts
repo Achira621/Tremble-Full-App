@@ -103,6 +103,28 @@ app.get('/api/debug', (_req: Request, res: Response) => {
     });
 });
 
+// DB status check
+app.get('/api/db-status', async (_req: Request, res: Response) => {
+    try {
+        const mongoose = await import('mongoose');
+        const state = mongoose.connection.readyState;
+        const stateMap: Record<number, string> = {
+            0: 'disconnected',
+            1: 'connected',
+            2: 'connecting',
+            3: 'disconnecting',
+        };
+        res.json({
+            success: state === 1,
+            dbState: stateMap[state] || 'unknown',
+            host: mongoose.connection.host || 'none',
+            db: mongoose.connection.name || 'none',
+        });
+    } catch (err: any) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
 // API routes with rate limiting
 app.use('/api/auth', authRoutes);
 app.use('/api/users', apiLimiter, userRoutes);
