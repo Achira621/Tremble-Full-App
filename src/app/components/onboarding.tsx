@@ -97,7 +97,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       if (response.success && response.data) {
         // Token is automatically saved by the API client
         // Now update profile with photos and interests
-        await api.users.updateProfile({
+        const updateResponse = await api.users.updateProfile({
           bio: profile.bio,
           interests: profile.interests,
           photos: photos.map((url, index) => ({
@@ -106,11 +106,18 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           })),
         });
 
-        // Call onComplete with full profile
-        onComplete({
-          ...profile,
-          photos,
-        });
+        // Fetch the full profile from the server
+        const profileResponse = await api.auth.getCurrentUser();
+        if (profileResponse.success && profileResponse.data) {
+          onComplete(profileResponse.data as any);
+        } else {
+          // Fallback to local data if getCurrentUser fails
+          console.warn('Could not fetch updated profile, using local data');
+          onComplete({
+            ...profile,
+            photos,
+          });
+        }
       } else {
         alert(response.error || 'Registration failed. Please try again.');
       }
@@ -179,6 +186,9 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                       const profileResponse = await api.auth.getCurrentUser();
                       if (profileResponse.success && profileResponse.data) {
                         onComplete(profileResponse.data as any);
+                      } else {
+                        console.error('Failed to get profile:', profileResponse.error);
+                        alert(profileResponse.error || 'Failed to load profile. Please try again.');
                       }
                     } else {
                       alert(response.error || 'Login failed');

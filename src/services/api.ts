@@ -155,10 +155,16 @@ class TrembleAPI {
             name: string;
             age: number;
         }): Promise<ApiResponse<AuthResponse>> => {
-            return this.request<AuthResponse>('/api/auth/signup', {
+            const response = await this.request<AuthResponse>('/api/auth/signup', {
                 method: 'POST',
                 body: JSON.stringify(data),
             });
+
+            if (response.success && response.data?.token) {
+                TokenManager.setToken(response.data.token);
+            }
+
+            return response;
         },
 
         login: async (email: string, password: string): Promise<ApiResponse<AuthResponse>> => {
