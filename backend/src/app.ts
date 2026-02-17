@@ -56,12 +56,50 @@ if (process.env.NODE_ENV === 'development') {
 // Serve static files (uploads)
 app.use('/uploads', express.static('uploads'));
 
+// Debug middleware - log every request
+app.use((req: Request, _res: Response, next) => {
+    console.log(`[REQ] ${req.method} ${req.originalUrl} (path: ${req.path})`);
+    next();
+});
+
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
     res.status(200).json({
         success: true,
         message: 'Server is running',
         timestamp: new Date().toISOString(),
+    });
+});
+
+// /api/health for Vercel (Vercel only routes /api/* to backend)
+app.get('/api/health', (_req: Request, res: Response) => {
+    res.status(200).json({
+        success: true,
+        message: 'API server is running',
+        env: {
+            NODE_ENV: process.env.NODE_ENV,
+            hasMongoURI: !!process.env.MONGODB_URI,
+            hasJwtSecret: !!process.env.JWT_SECRET,
+        },
+        timestamp: new Date().toISOString(),
+    });
+});
+
+// Debug route
+app.get('/api/debug', (_req: Request, res: Response) => {
+    res.status(200).json({
+        success: true,
+        message: 'Express routes are working!',
+        registeredRoutes: [
+            '/api/auth/*',
+            '/api/users/*',
+            '/api/posts/*',
+            '/api/connections/*',
+            '/api/matches/*',
+            '/api/discovery/*',
+            '/api/glimpses/*',
+            '/api/engagement/*',
+        ],
     });
 });
 
@@ -77,9 +115,11 @@ app.use('/api/engagement', apiLimiter, engagementRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
+    console.log(`[404] ${_req.method} ${_req.originalUrl} - Route not found`);
     res.status(404).json({
         success: false,
         error: 'Route not found',
+        path: _req.originalUrl,
     });
 });
 
