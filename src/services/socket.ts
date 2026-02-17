@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { TokenManager } from './api';
+import { TokenManager, API_BASE_URL } from './api';
 
 class SocketService {
     private socket: Socket | null = null;
@@ -14,7 +14,7 @@ class SocketService {
             return;
         }
 
-        this.socket = io('http://localhost:3000', {
+        this.socket = io(API_BASE_URL || undefined, {
             auth: { token },
             transports: ['websocket', 'polling'],
         });

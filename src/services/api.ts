@@ -1,6 +1,6 @@
 // API Configuration
-// Use localhost for development
-export const API_BASE_URL = 'http://localhost:3000';
+// Use relative URL for production (works on same domain)
+export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Types
 export interface ApiResponse<T = any> {

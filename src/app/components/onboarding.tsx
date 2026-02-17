@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { Camera, ArrowRight, X, Loader } from 'lucide-react';
-import api, { API_BASE_URL, TokenManager } from '../../services/api';
+import api from '../../services/api';
 
 interface OnboardingProps {
   onComplete: (profile: UserProfile) => void;
