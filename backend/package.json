@@ -2,6 +2,9 @@
   "name": "tremble-backend",
   "version": "1.0.0",
   "description": "High-performance backend for Tremble social photo discovery app",
+  "engines": {
+    "node": "22.x"
+  },
   "main": "dist/src/server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",

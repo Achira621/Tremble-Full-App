@@ -28,6 +28,7 @@
         }
     ],
     "env": {
+        "NODE_OPTIONS": "--experimental-require-module",
         "NODE_ENV": "production",
         "VITE_API_URL": "",
         "VITE_INSFORGE_URL": "https://ubeq5da7.us-east.insforge.app",
