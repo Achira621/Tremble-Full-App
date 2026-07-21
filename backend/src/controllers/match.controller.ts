@@ -1,8 +1,7 @@
 import { Response } from 'express';
-import Match from '../models/Match';
-import Connection from '../models/Connection';
 import { AuthRequest } from '../types';
 import { logger } from '../utils/logger';
+import { insforge } from '../config/database';
 
 export const likeUser = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
@@ -17,19 +16,26 @@ export const likeUser = async (req: AuthRequest, res: Response): Promise<void> =
             return;
         }
 
-        let match = await Match.findOne({
-            $or: [
-                { user1: currentUserId, user2: userId },
-                { user1: userId, user2: currentUserId },
-            ],
-        });
+        const { data: matches, error: fetchError } = await insforge
+            .from('matches')
+            .select('*')
+            .or(nd(user1_id.eq. + currentUserId + ,user2_id.eq. + userId + ),and(user1_id.eq. + userId + ,user2_id.eq. + currentUserId + ));
+
+        if (fetchError) throw fetchError;
+        let match = matches && matches.length > 0 ? matches[0] : null;
 
         if (!match) {
-            match = await Match.create({
-                user1: currentUserId,
-                user2: userId,
-                user1Liked: true,
-            });
+            const { data: newMatches, error: createError } = await insforge
+                .from('matches')
+                .insert([{
+                    user1_id: currentUserId,
+                    user2_id: userId,
+                    user1_liked: true
+                }])
+                .select();
+                
+            if (createError) throw createError;
+            match = newMatches[0];
 
             res.status(200).json({
                 success: true,
@@ -39,32 +45,38 @@ export const likeUser = async (req: AuthRequest, res: Response): Promise<void> =
                 },
             });
         } else {
-            if (match.user1.toString() === currentUserId) {
-                match.user1Liked = true;
+            let u1Liked = match.user1_liked;
+            let u2Liked = match.user2_liked;
+            let newStatus = match.status;
+            let matchedAt = match.matched_at;
+
+            if (match.user1_id === currentUserId) {
+                u1Liked = true;
             } else {
-                match.user2Liked = true;
+                u2Liked = true;
             }
 
-            if (match.user1Liked && match.user2Liked) {
-                match.status = 'matched';
-                match.matchedAt = new Date();
+            if (u1Liked && u2Liked) {
+                newStatus = 'matched';
+                matchedAt = new Date().toISOString();
             }
 
-            await match.save();
+            const { data: updatedMatches, error: updateError } = await insforge
+                .from('matches')
+                .update({ user1_liked: u1Liked, user2_liked: u2Liked, status: newStatus, matched_at: matchedAt })
+                .eq('id', match.id)
+                .select();
+
+            if (updateError) throw updateError;
+            match = updatedMatches[0];
 
             if (match.status === 'matched') {
-                await Connection.create({
-                    follower: currentUserId,
-                    following: userId,
-                    status: 'accepted',
-                });
-                await Connection.create({
-                    follower: userId,
-                    following: currentUserId,
-                    status: 'accepted',
-                });
+                await insforge.from('connections').insert([
+                    { follower_id: currentUserId, following_id: userId, status: 'accepted' },
+                    { follower_id: userId, following_id: currentUserId, status: 'accepted' }
+                ]);
 
-                logger.info(`New match: ${currentUserId} matched with ${userId}`);
+                logger.info(New match:  + currentUserId +  matched with  + userId);
             }
 
             res.status(200).json({
@@ -89,28 +101,37 @@ export const passUser = async (req: AuthRequest, res: Response): Promise<void> =
         const currentUserId = req.user.id;
         const { userId } = req.params;
 
-        let match = await Match.findOne({
-            $or: [
-                { user1: currentUserId, user2: userId },
-                { user1: userId, user2: currentUserId },
-            ],
-        });
+        const { data: matches, error: fetchError } = await insforge
+            .from('matches')
+            .select('*')
+            .or(nd(user1_id.eq. + currentUserId + ,user2_id.eq. + userId + ),and(user1_id.eq. + userId + ,user2_id.eq. + currentUserId + ));
+
+        if (fetchError) throw fetchError;
+        let match = matches && matches.length > 0 ? matches[0] : null;
 
         if (!match) {
-            match = await Match.create({
-                user1: currentUserId,
-                user2: userId,
-                user1Liked: false,
-                status: 'unmatched',
-            });
+            await insforge
+                .from('matches')
+                .insert([{
+                    user1_id: currentUserId,
+                    user2_id: userId,
+                    user1_liked: false,
+                    status: 'unmatched',
+                }]);
         } else {
-            if (match.user1.toString() === currentUserId) {
-                match.user1Liked = false;
+            let u1Liked = match.user1_liked;
+            let u2Liked = match.user2_liked;
+
+            if (match.user1_id === currentUserId) {
+                u1Liked = false;
             } else {
-                match.user2Liked = false;
+                u2Liked = false;
             }
-            match.status = 'unmatched';
-            await match.save();
+            
+            await insforge
+                .from('matches')
+                .update({ user1_liked: u1Liked, user2_liked: u2Liked, status: 'unmatched' })
+                .eq('id', match.id);
         }
 
         res.status(200).json({
@@ -131,25 +152,25 @@ export const unlikeUser = async (req: AuthRequest, res: Response): Promise<void>
         const currentUserId = req.user.id;
         const { userId } = req.params;
 
-        const match = await Match.findOneAndUpdate(
-            {
-                $or: [
-                    { user1: currentUserId, user2: userId },
-                    { user1: userId, user2: currentUserId },
-                ],
-                status: 'matched',
-            },
-            { status: 'unmatched' },
-            { new: true }
-        );
+        const { data: matches, error: fetchError } = await insforge
+            .from('matches')
+            .select('*')
+            .or(nd(user1_id.eq. + currentUserId + ,user2_id.eq. + userId + ),and(user1_id.eq. + userId + ,user2_id.eq. + currentUserId + ))
+            .eq('status', 'matched');
 
-        if (match) {
-            await Connection.deleteMany({
-                $or: [
-                    { follower: currentUserId, following: userId },
-                    { follower: userId, following: currentUserId },
-                ],
-            });
+        if (fetchError) throw fetchError;
+
+        if (matches && matches.length > 0) {
+            const match = matches[0];
+            await insforge
+                .from('matches')
+                .update({ status: 'unmatched' })
+                .eq('id', match.id);
+
+            await insforge
+                .from('connections')
+                .delete()
+                .or(nd(follower_id.eq. + currentUserId + ,following_id.eq. + userId + ),and(follower_id.eq. + userId + ,following_id.eq. + currentUserId + ));
         }
 
         res.status(200).json({
@@ -169,18 +190,20 @@ export const getMatches = async (req: AuthRequest, res: Response): Promise<void>
     try {
         const currentUserId = req.user.id;
 
-        const matches = await Match.find({
-            $or: [{ user1: currentUserId }, { user2: currentUserId }],
-            status: 'matched',
-        }).populate('user1', 'username fullName photos avatar age')
-         .populate('user2', 'username fullName photos avatar age');
+        const { data: matches, error } = await insforge
+            .from('matches')
+            .select('id, matched_at, user1:users!user1_id(id, username, full_name, profile_photo, age), user2:users!user2_id(id, username, full_name, profile_photo, age)')
+            .or(user1_id.eq. + currentUserId + ,user2_id.eq. + currentUserId)
+            .eq('status', 'matched');
 
-        const formattedMatches = matches.map(match => {
-            const otherUser = match.user1._id.toString() === currentUserId ? match.user2 : match.user1;
+        if (error) throw error;
+
+        const formattedMatches = (matches || []).map((match: any) => {
+            const otherUser = match.user1.id === currentUserId ? match.user2 : match.user1;
             return {
-                matchId: match._id,
+                matchId: match.id,
                 user: otherUser,
-                matchedAt: match.matchedAt,
+                matchedAt: match.matched_at,
             };
         });
 

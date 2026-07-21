@@ -15,7 +15,8 @@ app.get('/api/debug', (_req, res) => {
         message: 'Serverless function is working!',
         env: {
             NODE_ENV: process.env.NODE_ENV,
-            hasMongoURI: !!process.env.MONGODB_URI,
+            hasInsforgeUrl: !!(process.env.VITE_INSFORGE_URL || process.env.INSFORGE_URL),
+            hasInsforgeKey: !!(process.env.VITE_INSFORGE_ANON_KEY || process.env.INSFORGE_ANON_KEY),
             hasJwtSecret: !!process.env.JWT_SECRET,
         },
         timestamp: new Date().toISOString(),

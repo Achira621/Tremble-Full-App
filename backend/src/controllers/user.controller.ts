@@ -1,10 +1,10 @@
 import { Response } from 'express';
 import { body } from 'express-validator';
-import User from '../models/User';
-import Post from '../models/Post';
 import { AuthRequest } from '../types';
 import { logger } from '../utils/logger';
 import cache from '../utils/cache';
+import { insforge } from '../config/database';
+import { optimizeImage } from '../utils/imageProcessor';
 
 export const updateProfileValidation = [
     body('fullName').optional().trim().isLength({ max: 50 }),
@@ -17,7 +17,7 @@ export const updateProfileValidation = [
 export const getUserProfile = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { username } = req.params;
-        const cacheKey = `profile:${username}`;
+        const cacheKey = "profile: + username + ";
 
         // Check cache
         const cached = await cache.get(cacheKey);
@@ -26,11 +26,13 @@ export const getUserProfile = async (req: AuthRequest, res: Response): Promise<v
             return;
         }
 
-        const user = await User.findOne({ username })
-            .select('-password')
-            .lean(); // Use lean() for better performance
+        const { data: user, error: userError } = await insforge
+            .from('users')
+            .select('id, username, email, full_name, bio, age, interests, photos, profile_photo, followers_count, following_count, posts_count, last_active, vibes, badges, curiosity_score, created_at, updated_at')
+            .eq('username', username)
+            .single();
 
-        if (!user) {
+        if (userError || !user) {
             res.status(404).json({
                 success: false,
                 error: 'User not found',
@@ -38,12 +40,14 @@ export const getUserProfile = async (req: AuthRequest, res: Response): Promise<v
             return;
         }
 
-        // Get user's posts count
-        const postsCount = await Post.countDocuments({ user: user._id });
-
+        // The posts_count is inherently part of the table now, we can rely on it or fetch dynamically
+        // Since we have a 'posts_count' column per table schema, we don't need to manually count here unless triggered separately
         const profile = {
             ...user,
-            postsCount,
+            fullName: user.full_name,
+            postsCount: user.posts_count,
+            followersCount: user.followers_count,
+            followingCount: user.following_count
         };
 
         // Cache profile
@@ -74,21 +78,25 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
 
         const { fullName, bio } = req.body;
 
-        const user = await User.findById(req.user.id);
+        const updateData: any = {};
+        if (fullName) updateData.full_name = fullName;
+        if (bio !== undefined) updateData.bio = bio;
+        updateData.updated_at = new Date().toISOString();
 
-        if (!user) {
-            res.status(404).json({ success: false, error: 'User not found' });
+        const { data: user, error } = await insforge
+            .from('users')
+            .update(updateData)
+            .eq('id', req.user.id)
+            .select()
+            .single();
+
+        if (error || !user) {
+            res.status(404).json({ success: false, error: 'User not found or update failed' });
             return;
         }
 
-        // Update fields
-        if (fullName) user.fullName = fullName;
-        if (bio !== undefined) user.bio = bio;
-
-        await user.save();
-
         // Invalidate cache
-        await cache.del(`user:${user._id}`);
+        await cache.del(`user:${user.id}`);
         await cache.del(`profile:${user.username}`);
 
         logger.info(`User profile updated: ${user.username}`);
@@ -131,22 +139,21 @@ export const searchUsers = async (req: AuthRequest, res: Response): Promise<void
             return;
         }
 
-        // Text search using index
-        const users = await User.find(
-            { $text: { $search: q } },
-            { score: { $meta: 'textScore' } }
-        )
-            .select('username fullName profilePhoto followersCount')
-            .sort({ score: { $meta: 'textScore' } })
-            .limit(20)
-            .lean();
+        // Text search using ILIKE
+        const { data: users, error } = await insforge
+            .from('users')
+            .select('id, username, full_name, profile_photo, followers_count')
+            .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
+            .limit(20);
+            
+        if (error) throw error;
 
         // Cache results
-        await cache.set(cacheKey, users, 300); // 5 minutes
+        await cache.set(cacheKey, users || [], 300); // 5 minutes
 
         res.status(200).json({
             success: true,
-            data: users,
+            data: users || [],
         });
     } catch (error: any) {
         logger.error('Search users error:', error);
@@ -174,31 +181,39 @@ export const addVibe = async (req: AuthRequest, res: Response): Promise<void> =>
             return;
         }
 
-        const user = await User.findById(req.user.id);
+        const { data: user, error: fetchError } = await insforge
+            .from('users')
+            .select('id, username, vibes, curiosity_score')
+            .eq('id', req.user.id)
+            .single();
 
-        if (!user) {
+        if (fetchError || !user) {
             res.status(404).json({ success: false, error: 'User not found' });
             return;
         }
 
-        // Initialize vibes if undefined
-        if (!user.vibes) user.vibes = [];
+        const currentVibes = user.vibes || [];
 
         // Check if already has vibe
-        if (!user.vibes.includes(vibe)) {
-            user.vibes.push(vibe);
-            // Increment curiosity score for social interaction
-            user.curiosityScore = (user.curiosityScore || 100) + 5;
-            await user.save();
+        if (!currentVibes.includes(vibe)) {
+            const updatedVibes = [...currentVibes, vibe];
+            const updatedScore = (user.curiosity_score || 100) + 5;
+            
+            const { error: updateError } = await insforge
+                .from('users')
+                .update({ vibes: updatedVibes, curiosity_score: updatedScore })
+                .eq('id', user.id);
+                
+            if (updateError) throw updateError;
         }
 
         // Invalidate cache
-        await cache.del(`user:${user._id}`);
+        await cache.del(`user:${user.id}`);
         await cache.del(`profile:${user.username}`);
 
         res.status(200).json({
             success: true,
-            data: user,
+            message: 'Vibe added'
         });
     } catch (error: any) {
         logger.error('Add vibe error:', error);
@@ -222,8 +237,24 @@ export const uploadPhoto = async (req: AuthRequest, res: Response): Promise<void
             return;
         }
 
-        // Cloudinary URL is in req.file.path
-        const photoUrl = (req.file as any).path;
+        // Optimize image in memory
+        const optimizedBuffer = await optimizeImage(req.file.buffer, { width: 500, height: 500, format: 'webp' });
+
+        // Upload to InsForge Storage
+        const timestamp = Date.now();
+        const fileName = `profile_${timestamp}.webp`;
+        
+        const { error: uploadError } = await insforge.storage
+            .from('photos')
+            .upload(fileName, optimizedBuffer, {
+                contentType: 'image/webp',
+                cacheControl: '3600',
+            });
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const photoUrl = insforge.storage.from('photos').getPublicUrl(fileName).data.publicUrl;
 
         res.status(200).json({
             success: true,

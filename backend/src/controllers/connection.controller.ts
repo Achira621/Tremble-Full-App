@@ -1,9 +1,8 @@
 import { Response } from 'express';
-import Connection from '../models/Connection';
-import User from '../models/User';
 import { AuthRequest } from '../types';
 import { logger } from '../utils/logger';
 import cache from '../utils/cache';
+import { insforge } from '../config/database';
 
 // @desc    Follow user
 // @route   POST /api/connections/follow/:userId
@@ -24,17 +23,24 @@ export const followUser = async (req: AuthRequest, res: Response): Promise<void>
         }
 
         // Check if user exists
-        const userToFollow = await User.findById(userId);
-        if (!userToFollow) {
+        const { data: userToFollow, error: userError } = await insforge
+            .from('users')
+            .select('id')
+            .eq('id', userId)
+            .single();
+
+        if (userError || !userToFollow) {
             res.status(404).json({ success: false, error: 'User not found' });
             return;
         }
 
         // Check if already following
-        const existingConnection = await Connection.findOne({
-            follower: req.user.id,
-            following: userId,
-        });
+        const { data: existingConnection, error: connError } = await insforge
+            .from('connections')
+            .select('id')
+            .eq('follower_id', req.user.id)
+            .eq('following_id', userId)
+            .single();
 
         if (existingConnection) {
             res.status(400).json({ success: false, error: 'Already following this user' });
@@ -42,26 +48,26 @@ export const followUser = async (req: AuthRequest, res: Response): Promise<void>
         }
 
         // Create connection
-        await Connection.create({
-            follower: req.user.id,
-            following: userId,
+        await insforge.from('connections').insert([{
+            follower_id: req.user.id,
+            following_id: userId,
             status: 'accepted',
-        });
+        }]);
 
         // Update counts
-        await User.findByIdAndUpdate(req.user.id, {
-            $inc: { followingCount: 1 },
-            $addToSet: { following: userId },
-        });
+        const { data: currentUser } = await insforge.from('users').select('following_count').eq('id', req.user.id).single();
+        if (currentUser) {
+            await insforge.from('users').update({ following_count: (currentUser.following_count || 0) + 1 }).eq('id', req.user.id);
+        }
 
-        await User.findByIdAndUpdate(userId, {
-            $inc: { followersCount: 1 },
-            $addToSet: { followers: req.user.id },
-        });
+        const { data: targetUser } = await insforge.from('users').select('followers_count').eq('id', userId).single();
+        if (targetUser) {
+            await insforge.from('users').update({ followers_count: (targetUser.followers_count || 0) + 1 }).eq('id', userId);
+        }
 
         // Invalidate caches
         await cache.del(`user:${req.user.id}`);
-        await cache.del(`user:${userId}`);
+        await cache.del("user: + userId + ");
         await cache.delPattern(`feed:${req.user.id}:*`);
 
         logger.info(`${req.user.username} followed user ${userId}`);
@@ -92,30 +98,34 @@ export const unfollowUser = async (req: AuthRequest, res: Response): Promise<voi
         const { userId } = req.params;
 
         // Delete connection
-        const connection = await Connection.findOneAndDelete({
-            follower: req.user.id,
-            following: userId,
-        });
+        const { data: deletedConnections, error: deleteError } = await insforge
+            .from('connections')
+            .delete()
+            .eq('follower_id', req.user.id)
+            .eq('following_id', userId)
+            .select();
 
-        if (!connection) {
+        if (deleteError) throw deleteError;
+
+        if (!deletedConnections || deletedConnections.length === 0) {
             res.status(400).json({ success: false, error: 'Not following this user' });
             return;
         }
 
         // Update counts
-        await User.findByIdAndUpdate(req.user.id, {
-            $inc: { followingCount: -1 },
-            $pull: { following: userId },
-        });
+        const { data: currentUser } = await insforge.from('users').select('following_count').eq('id', req.user.id).single();
+        if (currentUser) {
+            await insforge.from('users').update({ following_count: Math.max(0, (currentUser.following_count || 0) - 1) }).eq('id', req.user.id);
+        }
 
-        await User.findByIdAndUpdate(userId, {
-            $inc: { followersCount: -1 },
-            $pull: { followers: req.user.id },
-        });
+        const { data: targetUser } = await insforge.from('users').select('followers_count').eq('id', userId).single();
+        if (targetUser) {
+            await insforge.from('users').update({ followers_count: Math.max(0, (targetUser.followers_count || 0) - 1) }).eq('id', userId);
+        }
 
         // Invalidate caches
         await cache.del(`user:${req.user.id}`);
-        await cache.del(`user:${userId}`);
+        await cache.del("user: + userId + ");
         await cache.delPattern(`feed:${req.user.id}:*`);
 
         logger.info(`${req.user.username} unfollowed user ${userId}`);
@@ -143,22 +153,18 @@ export const getFollowers = async (req: AuthRequest, res: Response): Promise<voi
         const limit = parseInt(req.query.limit as string) || 20;
         const skip = (page - 1) * limit;
 
-        const connections = await Connection.find({
-            following: userId,
-            status: 'accepted',
-        })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .populate('follower', 'username fullName profilePhoto followersCount')
-            .lean();
+        const { data: connections, error, count } = await insforge
+            .from('connections')
+            .select('follower:users!follower_id(id, username, full_name, profile_photo, followers_count)', { count: 'exact' })
+            .eq('following_id', userId)
+            .eq('status', 'accepted')
+            .order('created_at', { ascending: false })
+            .range(skip, skip + limit - 1);
 
-        const total = await Connection.countDocuments({
-            following: userId,
-            status: 'accepted',
-        });
+        if (error) throw error;
 
-        const followers = connections.map((c: any) => c.follower);
+        const total = count || 0;
+        const followers = (connections || []).map((c: any) => c.follower);
 
         res.status(200).json({
             success: true,
@@ -191,22 +197,18 @@ export const getFollowing = async (req: AuthRequest, res: Response): Promise<voi
         const limit = parseInt(req.query.limit as string) || 20;
         const skip = (page - 1) * limit;
 
-        const connections = await Connection.find({
-            follower: userId,
-            status: 'accepted',
-        })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .populate('following', 'username fullName profilePhoto followersCount')
-            .lean();
+        const { data: connections, error, count } = await insforge
+            .from('connections')
+            .select('following:users!following_id(id, username, full_name, profile_photo, followers_count)', { count: 'exact' })
+            .eq('follower_id', userId)
+            .eq('status', 'accepted')
+            .order('created_at', { ascending: false })
+            .range(skip, skip + limit - 1);
 
-        const total = await Connection.countDocuments({
-            follower: userId,
-            status: 'accepted',
-        });
+        if (error) throw error;
 
-        const following = connections.map((c: any) => c.following);
+        const total = count || 0;
+        const following = (connections || []).map((c: any) => c.following);
 
         res.status(200).json({
             success: true,

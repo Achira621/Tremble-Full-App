@@ -1,10 +1,11 @@
 import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { body } from 'express-validator';
-import User from '../models/User';
+import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../types';
 import { logger } from '../utils/logger';
 import cache from '../utils/cache';
+import { insforge } from '../config/database';
 
 // Validation rules
 export const signupValidation = [
@@ -53,11 +54,14 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
         const userFullName = fullName || name;
 
         // Check if user exists
-        const existingUser = await User.findOne({
-            $or: [{ email }, { username }],
-        });
+        const { data: existingUsers, error: checkError } = await insforge
+            .from('users')
+            .select('id')
+            .or(`email.eq.${email},username.eq.${username}`);
 
-        if (existingUser) {
+        if (checkError) throw checkError;
+
+        if (existingUsers && existingUsers.length > 0) {
             res.status(400).json({
                 success: false,
                 error: 'User already exists with this email or username',
@@ -65,16 +69,28 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
             return;
         }
 
+        // Hash password (since Mongoose hook is gone)
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
         // Create user
-        const user = await User.create({
-            username,
-            email,
-            password,
-            fullName: userFullName,
-        });
+        const { data: users, error: insertError } = await insforge
+            .from('users')
+            .insert([{
+                username,
+                email,
+                password: hashedPassword,
+                full_name: userFullName,
+            }])
+            .select();
+
+        if (insertError) throw insertError;
+        if (!users || users.length === 0) throw new Error('Failed to create user');
+        
+        const user = users[0];
 
         // Generate token
-        const token = generateToken(user._id.toString(), user.username, user.email);
+        const token = generateToken(user.id, user.username, user.email);
 
         logger.info(`New user registered: ${username}`);
 
@@ -83,16 +99,16 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
             message: 'User registered successfully',
             data: {
                 user: {
-                    id: user._id,
+                    id: user.id,
                     username: user.username,
                     email: user.email,
-                    fullName: user.fullName,
-                    name: user.fullName,
+                    fullName: user.full_name,
+                    name: user.full_name,
                     age: user.age,
                     bio: user.bio,
                     photos: user.photos || [],
                     interests: user.interests || [],
-                    vibeBadges: user.badges?.map(b => b.name) || [],
+                    vibeBadges: user.badges?.map((b: any) => b.name) || [],
                 },
                 token,
             },
@@ -113,10 +129,14 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { email, password } = req.body;
 
-        // Find user with password field
-        const user = await User.findOne({ email }).select('+password');
+        const { data: user, error: fetchError } = await insforge
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .single();
 
-        if (!user) {
+        if (fetchError || !user) {
+            logger.warn(`Login failed: Invalid credentials for ${email}`);
             res.status(401).json({
                 success: false,
                 error: 'Invalid credentials',
@@ -125,7 +145,7 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
         }
 
         // Check password
-        const isPasswordValid = await user.comparePassword(password);
+        const isPasswordValid = await bcrypt.compare(password, user.password);
 
         if (!isPasswordValid) {
             res.status(401).json({
@@ -136,11 +156,13 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
         }
 
         // Update last active
-        user.lastActive = new Date();
-        await user.save();
+        await insforge
+            .from('users')
+            .update({ last_active: new Date().toISOString() })
+            .eq('id', user.id);
 
         // Generate token
-        const token = generateToken(user._id.toString(), user.username, user.email);
+        const token = generateToken(user.id, user.username, user.email);
 
         logger.info(`User logged in: ${user.username}`);
 
@@ -149,11 +171,11 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
             message: 'Login successful',
             data: {
                 user: {
-                    id: user._id,
+                    id: user.id,
                     username: user.username,
                     email: user.email,
-                    fullName: user.fullName,
-                    profilePhoto: user.profilePhoto,
+                    fullName: user.full_name,
+                    profilePhoto: user.profile_photo,
                 },
                 token,
             },
@@ -193,9 +215,13 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
         }
 
         // Fetch from DB
-        const user = await User.findById(req.user.id);
+        const { data: user, error } = await insforge
+            .from('users')
+            .select('*')
+            .eq('id', req.user.id)
+            .single();
 
-        if (!user) {
+        if (error || !user) {
             res.status(404).json({
                 success: false,
                 error: 'User not found',
@@ -203,23 +229,25 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
             return;
         }
 
+        const userData = {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            fullName: user.full_name,
+            name: user.full_name,
+            age: user.age,
+            bio: user.bio,
+            photos: user.photos,
+            interests: user.interests,
+            vibeBadges: user.badges?.map((b: any) => b.name) || [],
+        };
+
         // Cache user data
-        await cache.set(cacheKey, user, 300); // 5 minutes
+        await cache.set(cacheKey, userData, 300); // 5 minutes
 
         res.status(200).json({
             success: true,
-            data: {
-                id: user._id,
-                username: user.username,
-                email: user.email,
-                fullName: user.fullName,
-                name: user.fullName,
-                age: user.age,
-                bio: user.bio,
-                photos: user.photos,
-                interests: user.interests,
-                vibeBadges: user.badges?.map(b => b.name) || [],
-            },
+            data: userData,
         });
     } catch (error: any) {
         logger.error('Get me error:', error);

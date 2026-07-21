@@ -3,7 +3,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 
 // Routes
@@ -20,12 +19,12 @@ import engagementRoutes from './routes/engagement.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { apiLimiter } from './middleware/ratelimit.middleware';
 import { logger } from './utils/logger';
+import { insforge } from './config/database'; // NEW db client
 
 const app: Application = express();
 
 // Security middleware
 app.use(helmet()); // Set security headers
-app.use(mongoSanitize()); // Prevent NoSQL injection
 app.use(hpp()); // Prevent HTTP parameter pollution
 
 // CORS
@@ -78,7 +77,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
         message: 'API server is running',
         env: {
             NODE_ENV: process.env.NODE_ENV,
-            hasMongoURI: !!process.env.MONGODB_URI,
+            hasInsforgeUrl: !!process.env.VITE_INSFORGE_URL,
             hasJwtSecret: !!process.env.JWT_SECRET,
         },
         timestamp: new Date().toISOString(),
@@ -103,25 +102,22 @@ app.get('/api/debug', (_req: Request, res: Response) => {
     });
 });
 
-// DB status check
+// DB status check via InsForge
 app.get('/api/db-status', async (_req: Request, res: Response) => {
     try {
-        const mongoose = await import('mongoose');
-        const state = mongoose.connection.readyState;
-        const stateMap: Record<number, string> = {
-            0: 'disconnected',
-            1: 'connected',
-            2: 'connecting',
-            3: 'disconnecting',
-        };
+        // Run a simple query to verify the InsForge connection
+        const { error } = await insforge.from('users').select('id').limit(1);
+
+        if (error) throw error;
+
         res.json({
-            success: state === 1,
-            dbState: stateMap[state] || 'unknown',
-            host: mongoose.connection.host || 'none',
-            db: mongoose.connection.name || 'none',
+            success: true,
+            dbState: 'connected',
+            host: 'insforge-postgresql',
+            db: 'public',
         });
     } catch (err: any) {
-        res.json({ success: false, error: err.message });
+        res.json({ success: false, dbState: 'disconnected', error: err.message });
     }
 });
 

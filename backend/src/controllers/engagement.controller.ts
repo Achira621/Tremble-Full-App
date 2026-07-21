@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
-import { DailyStreak, Achievement, Notification } from '../models/Engagement';
 import { AppError } from '../middleware/error.middleware';
+import { insforge } from '../config/database';
 
 // ==========================================
 // Streaks
@@ -9,30 +9,56 @@ import { AppError } from '../middleware/error.middleware';
 export const getDailyStreak = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
-        let streak = await DailyStreak.findOne({ user: userId });
+        
+        const { data: streaks, error: fetchError } = await insforge
+            .from('daily_streaks')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
 
-        if (!streak) {
-            streak = await DailyStreak.create({ user: userId });
+        let streak = streaks;
+
+        if (fetchError || !streak) {
+            const { data: newStreaks, error: createError } = await insforge
+                .from('daily_streaks')
+                .insert([{ user_id: userId }])
+                .select();
+                
+            if (createError) throw createError;
+            streak = newStreaks[0];
         }
 
         // Logic to check if streak is broken or needs update
         const now = new Date();
-        const lastLogin = new Date(streak.lastLoginDate);
+        const lastLogin = new Date(streak.last_login_date);
         const diffDays = Math.floor((now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60 * 24));
+
+        let currentStreak = streak.current_streak;
+        let longestStreak = streak.longest_streak;
+        let isUpdated = false;
 
         if (diffDays === 1) {
             // Consecutive day
-            streak.currentStreak += 1;
-            streak.lastLoginDate = now;
-            if (streak.currentStreak > streak.longestStreak) {
-                streak.longestStreak = streak.currentStreak;
+            currentStreak += 1;
+            if (currentStreak > longestStreak) {
+                longestStreak = currentStreak;
             }
-            await streak.save();
+            isUpdated = true;
         } else if (diffDays > 1) {
             // Broken streak
-            streak.currentStreak = 1;
-            streak.lastLoginDate = now;
-            await streak.save();
+            currentStreak = 1;
+            isUpdated = true;
+        }
+
+        if (isUpdated) {
+            const { data: updatedStreaks, error: updateError } = await insforge
+                .from('daily_streaks')
+                .update({ current_streak: currentStreak, longest_streak: longestStreak, last_login_date: now.toISOString() })
+                .eq('id', streak.id)
+                .select();
+                
+            if (updateError) throw updateError;
+            streak = updatedStreaks[0];
         }
 
         res.status(200).json({
@@ -62,10 +88,16 @@ export const claimStreakReward = async (req: AuthRequest, res: Response, next: N
 export const getAchievements = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
-        const achievements = await Achievement.find({ user: userId });
+        const { data: achievements, error } = await insforge
+            .from('achievements')
+            .select('*')
+            .eq('user_id', userId);
+            
+        if (error) throw error;
+
         res.status(200).json({
             success: true,
-            data: achievements
+            data: achievements || []
         });
     } catch (error) {
         next(error);
@@ -78,13 +110,18 @@ export const getAchievements = async (req: AuthRequest, res: Response, next: Nex
 export const getNotifications = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
-        const notifications = await Notification.find({ recipient: userId })
-            .sort({ createdAt: -1 })
+        const { data: notifications, error } = await insforge
+            .from('notifications')
+            .select('*')
+            .eq('recipient_id', userId)
+            .order('created_at', { ascending: false })
             .limit(50);
+            
+        if (error) throw error;
 
         res.status(200).json({
             success: true,
-            data: notifications
+            data: notifications || []
         });
     } catch (error) {
         next(error);
@@ -96,10 +133,11 @@ export const markNotificationRead = async (req: AuthRequest, res: Response, next
         const { id } = req.params;
         const userId = req.user.id;
 
-        await Notification.findOneAndUpdate(
-            { _id: id, recipient: userId },
-            { isRead: true }
-        );
+        await insforge
+            .from('notifications')
+            .update({ is_read: true })
+            .eq('id', id)
+            .eq('recipient_id', userId);
 
         res.status(200).json({ success: true });
     } catch (error) {

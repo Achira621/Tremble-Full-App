@@ -1,6 +1,4 @@
 import sharp from 'sharp';
-import path from 'path';
-import fs from 'fs';
 import { logger } from './logger';
 
 export interface ImageProcessingOptions {
@@ -11,13 +9,12 @@ export interface ImageProcessingOptions {
 }
 
 /**
- * Optimize and resize image for faster loading
+ * Optimize and resize image buffer for faster loading
  */
 export const optimizeImage = async (
-    inputPath: string,
-    outputPath?: string,
+    inputBuffer: Buffer,
     options: ImageProcessingOptions = {}
-): Promise<string> => {
+): Promise<Buffer> => {
     try {
         const {
             width = 1080,
@@ -26,23 +23,16 @@ export const optimizeImage = async (
             format = 'webp', // WebP for better compression
         } = options;
 
-        const output = outputPath || inputPath.replace(path.extname(inputPath), `.${format}`);
-
-        await sharp(inputPath)
+        const outputBuffer = await sharp(inputBuffer)
             .resize(width, height, {
                 fit: 'inside',
                 withoutEnlargement: true,
             })
-        [format]({ quality })
-            .toFile(output);
+            [format]({ quality })
+            .toBuffer();
 
-        // Delete original if different from output
-        if (output !== inputPath && fs.existsSync(inputPath)) {
-            fs.unlinkSync(inputPath);
-        }
-
-        logger.info(`Image optimized: ${output}`);
-        return output;
+        logger.info(`Image optimized successfully in memory`);
+        return outputBuffer;
     } catch (error) {
         logger.error('Error optimizing image:', error);
         throw error;
@@ -50,26 +40,23 @@ export const optimizeImage = async (
 };
 
 /**
- * Create thumbnail for faster preview loading
+ * Create thumbnail buffer for faster preview loading
  */
 export const createThumbnail = async (
-    inputPath: string,
+    inputBuffer: Buffer,
     size: number = 300
-): Promise<string> => {
+): Promise<Buffer> => {
     try {
-        const ext = path.extname(inputPath);
-        const thumbnailPath = inputPath.replace(ext, `-thumb${ext}`);
-
-        await sharp(inputPath)
+        const thumbnailBuffer = await sharp(inputBuffer)
             .resize(size, size, {
                 fit: 'cover',
                 position: 'center',
             })
             .webp({ quality: 70 })
-            .toFile(thumbnailPath);
+            .toBuffer();
 
-        logger.info(`Thumbnail created: ${thumbnailPath}`);
-        return thumbnailPath;
+        logger.info(`Thumbnail created successfully in memory`);
+        return thumbnailBuffer;
     } catch (error) {
         logger.error('Error creating thumbnail:', error);
         throw error;
@@ -77,11 +64,11 @@ export const createThumbnail = async (
 };
 
 /**
- * Get image metadata
+ * Get image metadata from buffer
  */
-export const getImageMetadata = async (imagePath: string) => {
+export const getImageMetadata = async (inputBuffer: Buffer) => {
     try {
-        const metadata = await sharp(imagePath).metadata();
+        const metadata = await sharp(inputBuffer).metadata();
         return {
             width: metadata.width,
             height: metadata.height,

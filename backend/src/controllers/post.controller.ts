@@ -1,12 +1,10 @@
 import { Response } from 'express';
 import { body } from 'express-validator';
-import Post from '../models/Post';
-import User from '../models/User';
-import Connection from '../models/Connection';
 import { AuthRequest } from '../types';
 import { logger } from '../utils/logger';
 import cache from '../utils/cache';
 import { optimizeImage, createThumbnail } from '../utils/imageProcessor';
+import { insforge } from '../config/database';
 
 export const createPostValidation = [
     body('caption').optional().trim().isLength({ max: 2200 }),
@@ -30,30 +28,60 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
 
         const { caption, location } = req.body;
 
-        // Optimize image
-        const optimizedPath = await optimizeImage(req.file.path);
-        const thumbnailPath = await createThumbnail(optimizedPath);
+        // Process image in memory
+        const optimizedBuffer = await optimizeImage(req.file.buffer);
+        const thumbnailBuffer = await createThumbnail(optimizedBuffer);
 
-        // Create post
-        const post = await Post.create({
-            user: req.user.id,
-            caption: caption || '',
-            mediaUrl: optimizedPath,
-            thumbnailUrl: thumbnailPath,
-            mediaType: req.file.mimetype.startsWith('video') ? 'video' : 'image',
-            location,
-        });
+        // Upload to InsForge Storage (photos bucket)
+        const timestamp = Date.now();
+        const mediaFileName = `${req.user.id}_${timestamp}_media.webp`;
+        const thumbFileName = `${req.user.id}_${timestamp}_thumb.webp`;
 
-        // Update user's post count
-        await User.findByIdAndUpdate(req.user.id, {
-            $inc: { postsCount: 1 },
-        });
+        const { error: uploadError } = await insforge.storage
+            .from('photos')
+            .upload(mediaFileName, optimizedBuffer, {
+                contentType: 'image/webp',
+                cacheControl: '3600',
+            });
+            
+        const { error: thumbUploadError } = await insforge.storage
+            .from('photos')
+            .upload(thumbFileName, thumbnailBuffer, {
+                contentType: 'image/webp',
+                cacheControl: '3600',
+            });
+
+        if (uploadError) throw uploadError;
+        if (thumbUploadError) throw thumbUploadError;
+
+        // Get public URLs
+        const mediaUrl = insforge.storage.from('photos').getPublicUrl(mediaFileName).data.publicUrl;
+        const thumbnailUrl = insforge.storage.from('photos').getPublicUrl(thumbFileName).data.publicUrl;
+
+        const { data: posts, error: createError } = await insforge
+            .from('posts')
+            .insert([{
+                user_id: req.user.id,
+                caption: caption || '',
+                media_url: mediaUrl,
+                thumbnail_url: thumbnailUrl,
+                media_type: req.file.mimetype.startsWith('video') ? 'video' : 'image',
+                location
+            }])
+            .select();
+
+        if (createError) throw createError;
+        if (!posts || posts.length === 0) throw new Error('Create post failed');
+        const post = posts[0];
+
+        // Note: user's posts_count is automatically updated via PostgreSQL triggers on the posts table.
+
 
         // Invalidate relevant caches
         await cache.delPattern(`feed:*`);
         await cache.del(`user:${req.user.id}`);
 
-        logger.info(`New post created by ${req.user.username}`);
+        logger.info(`New post created by user ${req.user.id}`);
 
         res.status(201).json({
             success: true,
@@ -93,34 +121,36 @@ export const getFeed = async (req: AuthRequest, res: Response): Promise<void> =>
         }
 
         // Get users that current user is following
-        const connections = await Connection.find({
-            follower: req.user.id,
-            status: 'accepted',
-        }).select('following');
+        const { data: connections, error: connError } = await insforge
+            .from('connections')
+            .select('following_id')
+            .eq('follower_id', req.user.id)
+            .eq('status', 'accepted');
 
-        const followingIds = connections.map((c) => c.following);
+        if (connError) throw connError;
+        
+        const followingIds = connections ? connections.map(c => c.following_id) : [];
+        const userPool = [...followingIds, req.user.id];
 
         // Get posts from following users + own posts
-        const posts = await Post.find({
-            user: { $in: [...followingIds, req.user.id] },
-        })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .populate('user', 'username fullName profilePhoto')
-            .lean();
+        const { data: posts, error: postError, count } = await insforge
+            .from('posts')
+            .select('*, users(username, full_name, profile_photo)', { count: 'exact' })
+            .in('user_id', userPool)
+            .order('created_at', { ascending: false })
+            .range(skip, skip + limit - 1);
 
-        const total = await Post.countDocuments({
-            user: { $in: [...followingIds, req.user.id] },
-        });
+        if (postError) throw postError;
+        
+        const total = count || 0;
 
         const result = {
-            posts,
+            posts: posts || [],
             pagination: {
                 currentPage: page,
                 totalPages: Math.ceil(total / limit),
                 totalItems: total,
-                hasMore: skip + posts.length < total,
+                hasMore: skip + (posts?.length || 0) < total,
             },
         };
 
@@ -152,27 +182,52 @@ export const toggleLike = async (req: AuthRequest, res: Response): Promise<void>
 
         const { postId } = req.params;
 
-        const post = await Post.findById(postId);
+        // Check if post exists
+        const { data: post, error: fetchError } = await insforge
+            .from('posts')
+            .select('likes_count')
+            .eq('id', postId)
+            .single();
 
-        if (!post) {
+        if (fetchError || !post) {
             res.status(404).json({ success: false, error: 'Post not found' });
             return;
         }
 
-        const userIdObj = req.user.id as any;
-        const hasLiked = post.likes.includes(userIdObj);
+        // Check if user already liked the post
+        const { data: existingLike, error: likeError } = await insforge
+            .from('post_likes')
+            .select('user_id')
+            .eq('post_id', postId)
+            .eq('user_id', req.user.id)
+            .single();
 
-        if (hasLiked) {
-            // Unlike
-            post.likes = post.likes.filter((id) => id.toString() !== req.user!.id);
-            post.likesCount = Math.max(0, post.likesCount - 1);
+        let hasLiked = false;
+        let newLikesCount = post.likes_count || 0;
+
+        if (existingLike) {
+            // Unlike 
+            await insforge
+                .from('post_likes')
+                .delete()
+                .eq('post_id', postId)
+                .eq('user_id', req.user.id);
+            
+            newLikesCount = Math.max(0, newLikesCount - 1);
+            hasLiked = true;
         } else {
             // Like
-            post.likes.push(userIdObj);
-            post.likesCount += 1;
+            await insforge
+                .from('post_likes')
+                .insert([{
+                    post_id: postId,
+                    user_id: req.user.id
+                }]);
+            
+            newLikesCount += 1;
         }
 
-        await post.save();
+        // Note: Post likes_count is automatically updated via PostgreSQL triggers on the post_likes table.
 
         // Invalidate feed cache
         await cache.delPattern(`feed:*`);
@@ -180,7 +235,7 @@ export const toggleLike = async (req: AuthRequest, res: Response): Promise<void>
         res.status(200).json({
             success: true,
             message: hasLiked ? 'Post unliked' : 'Post liked',
-            data: { liked: !hasLiked, likesCount: post.likesCount },
+            data: { liked: !hasLiked, likesCount: newLikesCount },
         });
     } catch (error: any) {
         logger.error('Toggle like error:', error);
@@ -201,9 +256,13 @@ export const getUserPosts = async (req: AuthRequest, res: Response): Promise<voi
         const limit = parseInt(req.query.limit as string) || 20;
         const skip = (page - 1) * limit;
 
-        const user = await User.findOne({ username });
+        const { data: user, error: userError } = await insforge
+            .from('users')
+            .select('id, posts_count')
+            .eq('username', username)
+            .single();
 
-        if (!user) {
+        if (userError || !user) {
             res.status(404).json({ success: false, error: 'User not found' });
             return;
         }
@@ -217,13 +276,16 @@ export const getUserPosts = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        const posts = await Post.find({ user: user._id })
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .lean();
+        const { data: posts, error: postError, count } = await insforge
+            .from('posts')
+            .select('*', { count: 'exact' })
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .range(skip, skip + limit - 1);
 
-        const total = user.postsCount || 0;
+        if (postError) throw postError;
+
+        const total = count || user.posts_count || 0;
 
         const result = {
             posts,
@@ -231,7 +293,7 @@ export const getUserPosts = async (req: AuthRequest, res: Response): Promise<voi
                 currentPage: page,
                 totalPages: Math.ceil(total / limit),
                 totalItems: total,
-                hasMore: skip + posts.length < total,
+                hasMore: skip + (posts?.length || 0) < total,
             },
         };
 
