@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/src/server.js",
     "lint": "eslint src/**/*.ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "postinstall": "node fix-schemas.js"
   },
   "keywords": [
     "social",
