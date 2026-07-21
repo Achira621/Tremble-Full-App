@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../types';
 import { AppError } from '../middleware/error.middleware';
 import { insforge } from '../config/database';
+import { optimizeImage } from '../utils/imageProcessor';
 
 // ==========================================
 // Create Glimpse
@@ -11,16 +12,30 @@ export const createGlimpse = async (req: AuthRequest, res: Response, next: NextF
         const { caption, mood, location, musicTrack, tags } = req.body;
         const userId = req.user.id;
 
-        // Get photo URL from uploaded file (Cloudinary returns it in req.file)
+        // Get photo URL from uploaded file (InsForge Storage)
         if (!req.file) {
             throw new AppError('Photo is required', 400);
         }
 
-        const photoUrl = (req.file as any).path; // Cloudinary stores URL in 'path' property
+        // Process image in memory
+        const optimizedBuffer = await optimizeImage(req.file.buffer, { width: 1080, format: 'webp' });
+
+        // Upload to InsForge Storage
+        const timestamp = Date.now();
+        const fileName = `glimpse_${timestamp}.webp`;
+        
+        const { error: uploadError } = await insforge.storage
+            .from('photos')
+            .upload(fileName, new Blob([optimizedBuffer]));
+
+        if (uploadError) throw uploadError;
+
+        // Get public URL
+        const photoUrl = insforge.storage.from('photos').getPublicUrl(fileName);
 
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-        const { data: glimpses, error: createError } = await insforge
+        const { data: glimpses, error: createError } = await insforge.database
             .from('glimpses')
             .insert([{
                 user_id: userId,
@@ -55,7 +70,7 @@ export const getFeed = async (req: AuthRequest, res: Response, next: NextFunctio
         const limit = parseInt(req.query.limit as string) || 10;
 
         // 1. Get IDs of glimpses already viewed by this user to exclude them
-        const { data: interactions, error: intError } = await insforge
+        const { data: interactions, error: intError } = await insforge.database
             .from('glimpse_interactions')
             .select('glimpse_id')
             .eq('user_id', userId)
@@ -71,7 +86,7 @@ export const getFeed = async (req: AuthRequest, res: Response, next: NextFunctio
         }
 
         // 2. Fetch fresh glimpses
-        let query = insforge
+        let query = insforge.database
             .from('glimpses')
             .select('id, photo_url, caption, mood, location, music_track, views, likes, comments, trembles, created_at, user:users!user_id(id, full_name, profile_photo, age)')
             .eq('is_active', true)
@@ -81,7 +96,7 @@ export const getFeed = async (req: AuthRequest, res: Response, next: NextFunctio
 
         if (viewedGlimpses.length > 0) {
             const excludeList = viewedGlimpses.join(',');
-            query = query.not('id', 'in', ( + excludeList + ));
+            query = query.not('id', 'in', '(' + excludeList + ')');
         }
 
         const { data: feed, error: feedError } = await query;
@@ -139,7 +154,7 @@ export const recordView = async (req: AuthRequest, res: Response, next: NextFunc
         const { id } = req.params;
         const userId = req.user.id;
 
-        const { data: existing, error: fetchError } = await insforge
+        const { data: existing, error: fetchError } = await insforge.database
             .from('glimpse_interactions')
             .select('*')
             .eq('glimpse_id', id)
@@ -152,16 +167,16 @@ export const recordView = async (req: AuthRequest, res: Response, next: NextFunc
         }
 
         if (!existing) {
-            await insforge.from('glimpse_interactions').insert([{
+            await insforge.database.from('glimpse_interactions').insert([{
                 glimpse_id: id,
                 user_id: userId,
                 interaction_type: 'view'
             }]);
 
             // Update glimpse views
-            const { data: glimpse } = await insforge.from('glimpses').select('views').eq('id', id).single();
+            const { data: glimpse } = await insforge.database.from('glimpses').select('views').eq('id', id).single();
             if (glimpse) {
-                await insforge.from('glimpses').update({ views: (glimpse.views || 0) + 1 }).eq('id', id);
+                await insforge.database.from('glimpses').update({ views: (glimpse.views || 0) + 1 }).eq('id', id);
             }
         }
 
@@ -176,7 +191,7 @@ export const likeGlimpse = async (req: AuthRequest, res: Response, next: NextFun
         const { id } = req.params;
         const userId = req.user.id;
 
-        const { data: existing, error: fetchError } = await insforge
+        const { data: existing, error: fetchError } = await insforge.database
             .from('glimpse_interactions')
             .select('*')
             .eq('glimpse_id', id)
@@ -186,7 +201,7 @@ export const likeGlimpse = async (req: AuthRequest, res: Response, next: NextFun
 
         let liked = false;
 
-        const { data: glimpse } = await insforge.from('glimpses').select('likes, user_id').eq('id', id).single();
+        const { data: glimpse } = await insforge.database.from('glimpses').select('likes, user_id').eq('id', id).single();
         if (!glimpse) {
             throw new AppError('Glimpse not found', 404);
         }
@@ -195,24 +210,24 @@ export const likeGlimpse = async (req: AuthRequest, res: Response, next: NextFun
 
         if (existing) {
             // Unlike
-            await insforge.from('glimpse_interactions').delete().eq('id', existing.id);
+            await insforge.database.from('glimpse_interactions').delete().eq('id', existing.id);
             const newLikes = Math.max(0, currentLikes - 1);
-            await insforge.from('glimpses').update({ likes: newLikes }).eq('id', id);
+            await insforge.database.from('glimpses').update({ likes: newLikes }).eq('id', id);
             liked = false;
         } else {
             // Like
-            await insforge.from('glimpse_interactions').insert([{
+            await insforge.database.from('glimpse_interactions').insert([{
                 glimpse_id: id,
                 user_id: userId,
                 interaction_type: 'like'
             }]);
             
-            await insforge.from('glimpses').update({ likes: currentLikes + 1 }).eq('id', id);
+            await insforge.database.from('glimpses').update({ likes: currentLikes + 1 }).eq('id', id);
             liked = true;
 
             // Notify Creator
             if (glimpse.user_id !== userId) {
-                await insforge.from('notifications').insert([{
+                await insforge.database.from('notifications').insert([{
                     recipient_id: glimpse.user_id,
                     sender_id: userId,
                     type: 'like',
@@ -235,7 +250,7 @@ export const trembleGlimpse = async (req: AuthRequest, res: Response, next: Next
         const userId = req.user.id;
 
         // Check if already trembled
-         const { data: existing } = await insforge
+         const { data: existing } = await insforge.database
              .from('glimpse_interactions')
              .select('*')
              .eq('glimpse_id', id)
@@ -244,19 +259,19 @@ export const trembleGlimpse = async (req: AuthRequest, res: Response, next: Next
              .single();
 
         if (!existing) {
-             await insforge.from('glimpse_interactions').insert([{
+             await insforge.database.from('glimpse_interactions').insert([{
                  glimpse_id: id,
                  user_id: userId,
                  interaction_type: 'tremble'
              }]);
 
-             const { data: glimpse } = await insforge.from('glimpses').select('trembles, user_id').eq('id', id).single();
+             const { data: glimpse } = await insforge.database.from('glimpses').select('trembles, user_id').eq('id', id).single();
              if (glimpse) {
-                 await insforge.from('glimpses').update({ trembles: (glimpse.trembles || 0) + 1 }).eq('id', id);
+                 await insforge.database.from('glimpses').update({ trembles: (glimpse.trembles || 0) + 1 }).eq('id', id);
              }
 
              if (glimpse && glimpse.user_id !== userId) {
-                 await insforge.from('notifications').insert([{
+                 await insforge.database.from('notifications').insert([{
                      recipient_id: glimpse.user_id,
                      sender_id: userId,
                      type: 'tremble',
@@ -279,7 +294,7 @@ export const commentGlimpse = async (req: AuthRequest, res: Response, next: Next
         const { content } = req.body;
         const userId = req.user.id;
 
-        const { data: comments, error: commentError } = await insforge.from('glimpse_comments').insert([{
+        const { data: comments, error: commentError } = await insforge.database.from('glimpse_comments').insert([{
             glimpse_id: id,
             user_id: userId,
             content
@@ -287,9 +302,9 @@ export const commentGlimpse = async (req: AuthRequest, res: Response, next: Next
 
         if (commentError) throw commentError;
 
-        const { data: glimpse } = await insforge.from('glimpses').select('comments').eq('id', id).single();
+        const { data: glimpse } = await insforge.database.from('glimpses').select('comments').eq('id', id).single();
         if (glimpse) {
-            await insforge.from('glimpses').update({ comments: (glimpse.comments || 0) + 1 }).eq('id', id);
+            await insforge.database.from('glimpses').update({ comments: (glimpse.comments || 0) + 1 }).eq('id', id);
         }
 
         res.status(201).json({ success: true, data: comments ? comments[0] : null });
@@ -305,7 +320,7 @@ export const getMyGlimpses = async (req: AuthRequest, res: Response, next: NextF
     try {
         const userId = req.user.id;
         
-        const { data: glimpses, error } = await insforge
+        const { data: glimpses, error } = await insforge.database
             .from('glimpses')
             .select('*')
             .eq('user_id', userId)

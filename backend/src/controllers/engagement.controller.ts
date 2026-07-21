@@ -10,7 +10,7 @@ export const getDailyStreak = async (req: AuthRequest, res: Response, next: Next
     try {
         const userId = req.user.id;
         
-        const { data: streaks, error: fetchError } = await insforge
+        const { data: streaks, error: fetchError } = await insforge.database
             .from('daily_streaks')
             .select('*')
             .eq('user_id', userId)
@@ -19,7 +19,7 @@ export const getDailyStreak = async (req: AuthRequest, res: Response, next: Next
         let streak = streaks;
 
         if (fetchError || !streak) {
-            const { data: newStreaks, error: createError } = await insforge
+            const { data: newStreaks, error: createError } = await insforge.database
                 .from('daily_streaks')
                 .insert([{ user_id: userId }])
                 .select();
@@ -51,7 +51,7 @@ export const getDailyStreak = async (req: AuthRequest, res: Response, next: Next
         }
 
         if (isUpdated) {
-            const { data: updatedStreaks, error: updateError } = await insforge
+            const { data: updatedStreaks, error: updateError } = await insforge.database
                 .from('daily_streaks')
                 .update({ current_streak: currentStreak, longest_streak: longestStreak, last_login_date: now.toISOString() })
                 .eq('id', streak.id)
@@ -88,7 +88,7 @@ export const claimStreakReward = async (req: AuthRequest, res: Response, next: N
 export const getAchievements = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
-        const { data: achievements, error } = await insforge
+        const { data: achievements, error } = await insforge.database
             .from('achievements')
             .select('*')
             .eq('user_id', userId);
@@ -110,7 +110,7 @@ export const getAchievements = async (req: AuthRequest, res: Response, next: Nex
 export const getNotifications = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
-        const { data: notifications, error } = await insforge
+        const { data: notifications, error } = await insforge.database
             .from('notifications')
             .select('*')
             .eq('recipient_id', userId)
@@ -133,7 +133,7 @@ export const markNotificationRead = async (req: AuthRequest, res: Response, next
         const { id } = req.params;
         const userId = req.user.id;
 
-        await insforge
+        await insforge.database
             .from('notifications')
             .update({ is_read: true })
             .eq('id', id)

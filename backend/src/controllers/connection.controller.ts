@@ -23,7 +23,7 @@ export const followUser = async (req: AuthRequest, res: Response): Promise<void>
         }
 
         // Check if user exists
-        const { data: userToFollow, error: userError } = await insforge
+        const { data: userToFollow, error: userError } = await insforge.database
             .from('users')
             .select('id')
             .eq('id', userId)
@@ -35,7 +35,7 @@ export const followUser = async (req: AuthRequest, res: Response): Promise<void>
         }
 
         // Check if already following
-        const { data: existingConnection, error: connError } = await insforge
+        const { data: existingConnection, error: connError } = await insforge.database
             .from('connections')
             .select('id')
             .eq('follower_id', req.user.id)
@@ -48,21 +48,21 @@ export const followUser = async (req: AuthRequest, res: Response): Promise<void>
         }
 
         // Create connection
-        await insforge.from('connections').insert([{
+        await insforge.database.from('connections').insert([{
             follower_id: req.user.id,
             following_id: userId,
             status: 'accepted',
         }]);
 
         // Update counts
-        const { data: currentUser } = await insforge.from('users').select('following_count').eq('id', req.user.id).single();
+        const { data: currentUser } = await insforge.database.from('users').select('following_count').eq('id', req.user.id).single();
         if (currentUser) {
-            await insforge.from('users').update({ following_count: (currentUser.following_count || 0) + 1 }).eq('id', req.user.id);
+            await insforge.database.from('users').update({ following_count: (currentUser.following_count || 0) + 1 }).eq('id', req.user.id);
         }
 
-        const { data: targetUser } = await insforge.from('users').select('followers_count').eq('id', userId).single();
+        const { data: targetUser } = await insforge.database.from('users').select('followers_count').eq('id', userId).single();
         if (targetUser) {
-            await insforge.from('users').update({ followers_count: (targetUser.followers_count || 0) + 1 }).eq('id', userId);
+            await insforge.database.from('users').update({ followers_count: (targetUser.followers_count || 0) + 1 }).eq('id', userId);
         }
 
         // Invalidate caches
@@ -98,7 +98,7 @@ export const unfollowUser = async (req: AuthRequest, res: Response): Promise<voi
         const { userId } = req.params;
 
         // Delete connection
-        const { data: deletedConnections, error: deleteError } = await insforge
+        const { data: deletedConnections, error: deleteError } = await insforge.database
             .from('connections')
             .delete()
             .eq('follower_id', req.user.id)
@@ -113,14 +113,14 @@ export const unfollowUser = async (req: AuthRequest, res: Response): Promise<voi
         }
 
         // Update counts
-        const { data: currentUser } = await insforge.from('users').select('following_count').eq('id', req.user.id).single();
+        const { data: currentUser } = await insforge.database.from('users').select('following_count').eq('id', req.user.id).single();
         if (currentUser) {
-            await insforge.from('users').update({ following_count: Math.max(0, (currentUser.following_count || 0) - 1) }).eq('id', req.user.id);
+            await insforge.database.from('users').update({ following_count: Math.max(0, (currentUser.following_count || 0) - 1) }).eq('id', req.user.id);
         }
 
-        const { data: targetUser } = await insforge.from('users').select('followers_count').eq('id', userId).single();
+        const { data: targetUser } = await insforge.database.from('users').select('followers_count').eq('id', userId).single();
         if (targetUser) {
-            await insforge.from('users').update({ followers_count: Math.max(0, (targetUser.followers_count || 0) - 1) }).eq('id', userId);
+            await insforge.database.from('users').update({ followers_count: Math.max(0, (targetUser.followers_count || 0) - 1) }).eq('id', userId);
         }
 
         // Invalidate caches
@@ -153,7 +153,7 @@ export const getFollowers = async (req: AuthRequest, res: Response): Promise<voi
         const limit = parseInt(req.query.limit as string) || 20;
         const skip = (page - 1) * limit;
 
-        const { data: connections, error, count } = await insforge
+        const { data: connections, error, count } = await insforge.database
             .from('connections')
             .select('follower:users!follower_id(id, username, full_name, profile_photo, followers_count)', { count: 'exact' })
             .eq('following_id', userId)
@@ -197,7 +197,7 @@ export const getFollowing = async (req: AuthRequest, res: Response): Promise<voi
         const limit = parseInt(req.query.limit as string) || 20;
         const skip = (page - 1) * limit;
 
-        const { data: connections, error, count } = await insforge
+        const { data: connections, error, count } = await insforge.database
             .from('connections')
             .select('following:users!following_id(id, username, full_name, profile_photo, followers_count)', { count: 'exact' })
             .eq('follower_id', userId)

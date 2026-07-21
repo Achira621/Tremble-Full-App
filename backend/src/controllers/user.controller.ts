@@ -26,7 +26,7 @@ export const getUserProfile = async (req: AuthRequest, res: Response): Promise<v
             return;
         }
 
-        const { data: user, error: userError } = await insforge
+        const { data: user, error: userError } = await insforge.database
             .from('users')
             .select('id, username, email, full_name, bio, age, interests, photos, profile_photo, followers_count, following_count, posts_count, last_active, vibes, badges, curiosity_score, created_at, updated_at')
             .eq('username', username)
@@ -83,7 +83,7 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
         if (bio !== undefined) updateData.bio = bio;
         updateData.updated_at = new Date().toISOString();
 
-        const { data: user, error } = await insforge
+        const { data: user, error } = await insforge.database
             .from('users')
             .update(updateData)
             .eq('id', req.user.id)
@@ -140,7 +140,7 @@ export const searchUsers = async (req: AuthRequest, res: Response): Promise<void
         }
 
         // Text search using ILIKE
-        const { data: users, error } = await insforge
+        const { data: users, error } = await insforge.database
             .from('users')
             .select('id, username, full_name, profile_photo, followers_count')
             .or(`username.ilike.%${q}%,full_name.ilike.%${q}%`)
@@ -181,7 +181,7 @@ export const addVibe = async (req: AuthRequest, res: Response): Promise<void> =>
             return;
         }
 
-        const { data: user, error: fetchError } = await insforge
+        const { data: user, error: fetchError } = await insforge.database
             .from('users')
             .select('id, username, vibes, curiosity_score')
             .eq('id', req.user.id)
@@ -199,7 +199,7 @@ export const addVibe = async (req: AuthRequest, res: Response): Promise<void> =>
             const updatedVibes = [...currentVibes, vibe];
             const updatedScore = (user.curiosity_score || 100) + 5;
             
-            const { error: updateError } = await insforge
+            const { error: updateError } = await insforge.database
                 .from('users')
                 .update({ vibes: updatedVibes, curiosity_score: updatedScore })
                 .eq('id', user.id);
@@ -246,15 +246,12 @@ export const uploadPhoto = async (req: AuthRequest, res: Response): Promise<void
         
         const { error: uploadError } = await insforge.storage
             .from('photos')
-            .upload(fileName, optimizedBuffer, {
-                contentType: 'image/webp',
-                cacheControl: '3600',
-            });
+            .upload(fileName, new Blob([optimizedBuffer]));
 
         if (uploadError) throw uploadError;
 
         // Get public URL
-        const photoUrl = insforge.storage.from('photos').getPublicUrl(fileName).data.publicUrl;
+        const photoUrl = insforge.storage.from('photos').getPublicUrl(fileName);
 
         res.status(200).json({
             success: true,

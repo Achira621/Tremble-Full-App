@@ -217,3 +217,21 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER update_follows_trigger
 AFTER INSERT OR UPDATE OR DELETE ON connections
 FOR EACH ROW EXECUTE FUNCTION trigger_update_follows();
+
+-- ==========================================
+-- 10. MESSAGES
+-- ==========================================
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    match_id UUID REFERENCES matches(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    media_url TEXT,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_messages_sender_receiver ON messages (sender_id, receiver_id);
+CREATE INDEX idx_messages_match_id ON messages (match_id);
+CREATE INDEX idx_messages_created_at ON messages (created_at DESC);

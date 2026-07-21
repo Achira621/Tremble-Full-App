@@ -1,6 +1,7 @@
 import { Server as HTTPServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { insforge } from '../config/database';
 
 interface ConnectedUser {
     userId: string;
@@ -94,18 +95,49 @@ class SocketManager {
     }, socket: Socket): Promise<void> {
         const { conversationId, receiverId, content } = data;
 
-        const Message = (await import('../models/Message')).default;
-        
-        const message = await Message.create({
-            conversation: conversationId,
-            sender: socket.userId,
-            receiver: receiverId,
-            content,
-        });
+        const { data: insertedMessages, error: insertError } = await insforge.database
+            .from('messages')
+            .insert([{
+                match_id: conversationId,
+                sender_id: socket.userId,
+                receiver_id: receiverId,
+                content
+            }])
+            .select();
 
-        const populatedMessage = await Message.findById(message._id)
-            .populate('sender', 'username avatar')
-            .populate('receiver', 'username avatar');
+        if (insertError) {
+            console.error('Socket message save error:', insertError);
+            return;
+        }
+
+        const msg = insertedMessages[0];
+
+        // Fetch sender and receiver profiles to populate
+        const { data: sender } = await insforge.database.from('users').select('username, profile_photo').eq('id', socket.userId).single();
+        const { data: receiver } = await insforge.database.from('users').select('username, profile_photo').eq('id', receiverId).single();
+
+        const populatedMessage = {
+            _id: msg.id,
+            id: msg.id,
+            conversation: msg.match_id,
+            senderId: msg.sender_id,
+            receiverId: msg.receiver_id,
+            content: msg.content,
+            read: msg.is_read,
+            createdAt: msg.created_at,
+            sender: {
+                _id: msg.sender_id,
+                id: msg.sender_id,
+                username: sender?.username || socket.username,
+                avatar: sender?.profile_photo || ''
+            },
+            receiver: {
+                _id: msg.receiver_id,
+                id: msg.receiver_id,
+                username: receiver?.username || '',
+                avatar: receiver?.profile_photo || ''
+            }
+        };
 
         this.io?.to(`conversation:${conversationId}`).emit('newMessage', populatedMessage);
 

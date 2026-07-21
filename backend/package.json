@@ -19,6 +19,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@insforge/sdk": "^1.5.0",
     "@types/uuid": "^10.0.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^1.41.3",

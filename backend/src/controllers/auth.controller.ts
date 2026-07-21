@@ -54,7 +54,7 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
         const userFullName = fullName || name;
 
         // Check if user exists
-        const { data: existingUsers, error: checkError } = await insforge
+        const { data: existingUsers, error: checkError } = await insforge.database
             .from('users')
             .select('id')
             .or(`email.eq.${email},username.eq.${username}`);
@@ -74,7 +74,7 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
         const hashedPassword = await bcrypt.hash(password, salt);
 
         // Create user
-        const { data: users, error: insertError } = await insforge
+        const { data: users, error: insertError } = await insforge.database
             .from('users')
             .insert([{
                 username,
@@ -129,7 +129,7 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
         const { email, password } = req.body;
 
-        const { data: user, error: fetchError } = await insforge
+        const { data: user, error: fetchError } = await insforge.database
             .from('users')
             .select('*')
             .eq('email', email)
@@ -156,7 +156,7 @@ export const login = async (req: AuthRequest, res: Response): Promise<void> => {
         }
 
         // Update last active
-        await insforge
+        await insforge.database
             .from('users')
             .update({ last_active: new Date().toISOString() })
             .eq('id', user.id);
@@ -215,7 +215,7 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<void> => {
         }
 
         // Fetch from DB
-        const { data: user, error } = await insforge
+        const { data: user, error } = await insforge.database
             .from('users')
             .select('*')
             .eq('id', req.user.id)

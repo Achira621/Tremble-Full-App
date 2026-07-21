@@ -106,7 +106,7 @@ app.get('/api/debug', (_req: Request, res: Response) => {
 app.get('/api/db-status', async (_req: Request, res: Response) => {
     try {
         // Run a simple query to verify the InsForge connection
-        const { error } = await insforge.from('users').select('id').limit(1);
+        const { error } = await insforge.database.from('users').select('id').limit(1);
 
         if (error) throw error;
 

@@ -10,10 +10,10 @@ export const getDiscoveryFeed = async (req: AuthRequest, res: Response): Promise
         const limit = parseInt(req.query.limit as string) || 10;
         
         // Get users already matched with or passed
-        const { data: matches, error: matchError } = await insforge
+        const { data: matches, error: matchError } = await insforge.database
             .from('matches')
             .select('user1_id, user2_id')
-            .or(user1_id.eq. + currentUserId + ,user2_id.eq. + currentUserId);
+            .or(`user1_id.eq.${currentUserId},user2_id.eq.${currentUserId}`);
 
         if (matchError) throw matchError;
 
@@ -29,11 +29,11 @@ export const getDiscoveryFeed = async (req: AuthRequest, res: Response): Promise
 
         const skip = (page - 1) * limit;
 
-        const { data: users, error: userError, count } = await insforge
+        const { data: users, error: userError, count } = await insforge.database
             .from('users')
             .select('id, username, full_name, age, bio, photos, interests', { count: 'exact' })
             // To do not in, we construct a filter. If the array is large, this might need an RPC, but we'll use not.in.
-            .not('id', 'in', ( + excludeIds.join(',') + ))
+            .not('id', 'in', '(' + excludeIds.join(',') + ')')
             .range(skip, skip + limit - 1);
 
         if (userError) throw userError;

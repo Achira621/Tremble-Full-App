@@ -39,26 +39,20 @@ export const createPost = async (req: AuthRequest, res: Response): Promise<void>
 
         const { error: uploadError } = await insforge.storage
             .from('photos')
-            .upload(mediaFileName, optimizedBuffer, {
-                contentType: 'image/webp',
-                cacheControl: '3600',
-            });
+            .upload(mediaFileName, new Blob([optimizedBuffer]));
             
         const { error: thumbUploadError } = await insforge.storage
             .from('photos')
-            .upload(thumbFileName, thumbnailBuffer, {
-                contentType: 'image/webp',
-                cacheControl: '3600',
-            });
+            .upload(thumbFileName, new Blob([thumbnailBuffer]));
 
         if (uploadError) throw uploadError;
         if (thumbUploadError) throw thumbUploadError;
 
         // Get public URLs
-        const mediaUrl = insforge.storage.from('photos').getPublicUrl(mediaFileName).data.publicUrl;
-        const thumbnailUrl = insforge.storage.from('photos').getPublicUrl(thumbFileName).data.publicUrl;
+        const mediaUrl = insforge.storage.from('photos').getPublicUrl(mediaFileName);
+        const thumbnailUrl = insforge.storage.from('photos').getPublicUrl(thumbFileName);
 
-        const { data: posts, error: createError } = await insforge
+        const { data: posts, error: createError } = await insforge.database
             .from('posts')
             .insert([{
                 user_id: req.user.id,
@@ -121,7 +115,7 @@ export const getFeed = async (req: AuthRequest, res: Response): Promise<void> =>
         }
 
         // Get users that current user is following
-        const { data: connections, error: connError } = await insforge
+        const { data: connections, error: connError } = await insforge.database
             .from('connections')
             .select('following_id')
             .eq('follower_id', req.user.id)
@@ -133,7 +127,7 @@ export const getFeed = async (req: AuthRequest, res: Response): Promise<void> =>
         const userPool = [...followingIds, req.user.id];
 
         // Get posts from following users + own posts
-        const { data: posts, error: postError, count } = await insforge
+        const { data: posts, error: postError, count } = await insforge.database
             .from('posts')
             .select('*, users(username, full_name, profile_photo)', { count: 'exact' })
             .in('user_id', userPool)
@@ -183,7 +177,7 @@ export const toggleLike = async (req: AuthRequest, res: Response): Promise<void>
         const { postId } = req.params;
 
         // Check if post exists
-        const { data: post, error: fetchError } = await insforge
+        const { data: post, error: fetchError } = await insforge.database
             .from('posts')
             .select('likes_count')
             .eq('id', postId)
@@ -195,7 +189,7 @@ export const toggleLike = async (req: AuthRequest, res: Response): Promise<void>
         }
 
         // Check if user already liked the post
-        const { data: existingLike, error: likeError } = await insforge
+        const { data: existingLike, error: likeError } = await insforge.database
             .from('post_likes')
             .select('user_id')
             .eq('post_id', postId)
@@ -207,7 +201,7 @@ export const toggleLike = async (req: AuthRequest, res: Response): Promise<void>
 
         if (existingLike) {
             // Unlike 
-            await insforge
+            await insforge.database
                 .from('post_likes')
                 .delete()
                 .eq('post_id', postId)
@@ -217,7 +211,7 @@ export const toggleLike = async (req: AuthRequest, res: Response): Promise<void>
             hasLiked = true;
         } else {
             // Like
-            await insforge
+            await insforge.database
                 .from('post_likes')
                 .insert([{
                     post_id: postId,
@@ -256,7 +250,7 @@ export const getUserPosts = async (req: AuthRequest, res: Response): Promise<voi
         const limit = parseInt(req.query.limit as string) || 20;
         const skip = (page - 1) * limit;
 
-        const { data: user, error: userError } = await insforge
+        const { data: user, error: userError } = await insforge.database
             .from('users')
             .select('id, posts_count')
             .eq('username', username)
@@ -276,7 +270,7 @@ export const getUserPosts = async (req: AuthRequest, res: Response): Promise<voi
             return;
         }
 
-        const { data: posts, error: postError, count } = await insforge
+        const { data: posts, error: postError, count } = await insforge.database
             .from('posts')
             .select('*', { count: 'exact' })
             .eq('user_id', user.id)
