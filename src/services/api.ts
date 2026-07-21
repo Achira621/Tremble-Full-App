@@ -2,6 +2,14 @@
 // Use relative URL - for Vercel production use '/api', for local dev use 'http://localhost:3000'
 const getApiUrl = () => {
   const envUrl = import.meta.env.VITE_API_URL;
+  
+  // If running in production browser (not on localhost) but envUrl is set to localhost, force relative URL ('')
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    if (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
+      return '';
+    }
+  }
+
   // If explicitly set to empty string or not set, use relative /api
   if (!envUrl || envUrl === '') {
     return '';
