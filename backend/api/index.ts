@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -5,27 +6,34 @@ import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-import app from '../src/app';
-import connectDB from '../src/config/database';
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+    // Add debug route bypass directly in the handler wrapper
+    if (req.url?.includes('/api/debug-test')) {
+        return res.status(200).json({ success: true, message: "Debug Test works!" });
+    }
 
-// Debug route - add BEFORE other routes to verify serverless function works
-app.get('/api/debug', (_req, res) => {
-    res.json({
-        success: true,
-        message: 'Serverless function is working!',
-        env: {
-            NODE_ENV: process.env.NODE_ENV,
-            hasInsforgeUrl: !!(process.env.VITE_INSFORGE_URL || process.env.INSFORGE_URL),
-            hasInsforgeKey: !!(process.env.VITE_INSFORGE_ANON_KEY || process.env.INSFORGE_ANON_KEY),
-            hasJwtSecret: !!process.env.JWT_SECRET,
-        },
-        timestamp: new Date().toISOString(),
-    });
-});
-
-// Connect to database with error handling
-connectDB().catch((err) => {
-    console.error('Database connection failed:', err.message);
-});
-
-export default app;
+    try {
+        // Dynamically import the app and db to catch top-level initialization errors
+        const appModule = await import('../src/app');
+        const connectDB = (await import('../src/config/database')).default;
+        
+        // Connect to database with error handling
+        await connectDB().catch((err: any) => {
+            console.error('Database connection failed:', err.message);
+        });
+        
+        // Express app handles the request
+        const app = appModule.default;
+        return app(req as any, res as any);
+    } catch (err: any) {
+        console.error("FATAL STARTUP ERROR:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Fatal startup error",
+            error: err.message,
+            stack: err.stack,
+            name: err.name,
+            code: err.code
+        });
+    }
+}
