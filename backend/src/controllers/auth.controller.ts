@@ -50,26 +50,38 @@ const generateToken = (id: string, username: string, email: string): string => {
 // @access  Public
 export const signup = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const { username, email, password, fullName, name } = req.body;
+        const { username, email, password, fullName, name, age, bio, interests, photos } = req.body;
         const userFullName = fullName || name;
 
-        // Check if user exists
-        const { data: existingUsers, error: checkError } = await insforge.database
+        // Check if user exists by email
+        const { data: existingByEmail } = await insforge.database
             .from('users')
             .select('id')
-            .or(`email.eq.${email},username.eq.${username}`);
+            .eq('email', email);
 
-        if (checkError) throw checkError;
-
-        if (existingUsers && existingUsers.length > 0) {
+        if (existingByEmail && existingByEmail.length > 0) {
             res.status(400).json({
                 success: false,
-                error: 'User already exists with this email or username',
+                error: 'User already exists with this email',
             });
             return;
         }
 
-        // Hash password (since Mongoose hook is gone)
+        // Check if user exists by username
+        const { data: existingByUsername } = await insforge.database
+            .from('users')
+            .select('id')
+            .eq('username', username);
+
+        if (existingByUsername && existingByUsername.length > 0) {
+            res.status(400).json({
+                success: false,
+                error: 'User already exists with this username',
+            });
+            return;
+        }
+
+        // Hash password
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -81,10 +93,23 @@ export const signup = async (req: AuthRequest, res: Response): Promise<void> => 
                 email,
                 password: hashedPassword,
                 full_name: userFullName,
+                age: age || null,
+                bio: bio || null,
+                interests: interests || [],
+                photos: photos || [],
+                profile_photo: (photos && photos.length > 0) ? photos[0] : null,
             }])
             .select();
 
-        if (insertError) throw insertError;
+        if (insertError) {
+            console.error('Insert user error:', insertError);
+            res.status(400).json({
+                success: false,
+                error: insertError.message || 'Failed to create user',
+            });
+            return;
+        }
+
         if (!users || users.length === 0) throw new Error('Failed to create user');
         
         const user = users[0];

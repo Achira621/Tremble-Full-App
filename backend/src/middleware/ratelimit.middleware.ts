@@ -16,6 +16,7 @@ const createRateLimiter = (windowMs: number, max: number, message: string) => {
         legacyHeaders: false,
         // Skip failed requests
         skipFailedRequests: true,
+        validate: { trustProxy: false },
     };
 
     // Use Redis store if available for distributed rate limiting

@@ -23,6 +23,9 @@ import { insforge } from './config/database'; // NEW db client
 
 const app: Application = express();
 
+// Trust proxy for Vercel / serverless deployments
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet()); // Set security headers
 app.use(hpp()); // Prevent HTTP parameter pollution
